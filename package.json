@@ -1,0 +1,11 @@
+{
+  "name": "blindmusic",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:web": "bun --cwd apps/web dev",
+    "dev:server": "bun --cwd apps/server dev",
+    "db:push": "bun --cwd apps/server db:push",
+    "db:seed": "bun --cwd apps/server db:seed"
+  }
+}

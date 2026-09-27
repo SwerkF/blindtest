@@ -1,0 +1,7 @@
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+apps/server/dev.db
+apps/server/*.db
+dist
+.env

@@ -1,0 +1,7 @@
+{
+  "name": "@blindmusic/shared",
+  "private": true,
+  "exports": {
+    ".": "./src/types.ts"
+  }
+}

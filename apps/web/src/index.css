@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Outfit", sans-serif;
+
+  /* Raw palette */
+  --color-toffee: #946846;
+  --color-smoke: #f7f5f3;
+  --color-alabaster: #ebe7e4;
+  --color-khaki: #bfac9b;
+  --color-carbon: #251e18;
+  --color-pitch: #191410;
+
+  /* Semantic tokens — overridden by .dark below */
+  --color-canvas: #f7f5f3;
+  --color-surface: #ffffff;
+  --color-edge: #ebe7e4;
+  --color-ink: #251e18;
+  --color-muted: #bfac9b;
+  --color-accent: #946846;
+  --color-inverse: #251e18;
+  --color-inverse-ink: #f7f5f3;
+}
+
+.dark {
+  --color-canvas: #191410;
+  --color-surface: #251e18;
+  --color-edge: #3a2f26;
+  --color-ink: #f7f5f3;
+  --color-muted: #9c8c7c;
+  --color-accent: #c08a5e;
+  --color-inverse: #ebe7e4;
+  --color-inverse-ink: #191410;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Outfit", sans-serif;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  60% {
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-fade {
+  animation: fade-in 0.25s ease-out both;
+}
+
+@utility animate-rise {
+  animation: rise-in 0.22s ease-out both;
+}
+
+@utility animate-pop {
+  animation: pop-in 0.3s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+/* Respect users who ask for less motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-muted);
+  border-radius: 2px;
+}
