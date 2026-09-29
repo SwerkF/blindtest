@@ -4,6 +4,12 @@ export enum GameMode {
   Anime = "anime",
 }
 
+export enum ErrorCode {
+  RoomNotFound = "room_not_found",
+}
+
+export const LOBBY_PASSWORD_MAX_LENGTH = 32
+
 export enum GamePhase {
   Lobby = "lobby",
   Playing = "playing",
@@ -120,6 +126,9 @@ export interface PlayerPublic {
   hasFoundArtist: boolean
   hasFoundTitle: boolean
   hasFoundBoth: boolean
+  hasFoundYear: boolean
+  /** Points earned in the current round, shown next to the total. */
+  roundPoints: number
   connected: boolean
 }
 
@@ -189,6 +198,8 @@ export type WsServerMessage =
       isLast: boolean
     }
   | { type: "chat:message"; playerId: string; playerName: string; text: string; at: number }
+  | { type: "reaction"; playerId: string; emoji: Reaction; at: number }
+  | { type: "player:typing"; playerId: string; typing: boolean }
   | {
       type: "game:end"
       scores: Record<string, number>
@@ -196,7 +207,9 @@ export type WsServerMessage =
       tracks: PlayedTrack[]
       outcomes: Record<string, RoundOutcome[]>
     }
-  | { type: "error"; message: string }
+  /** Who may join: sent to everyone, the password itself only to the host. */
+  | { type: "lobby:access"; hasPassword: boolean; allowLateJoin: boolean; password?: string }
+  | { type: "error"; message: string; code?: ErrorCode }
 
 export type WsClientMessage =
   | { type: "lobby:settings"; settings: LobbySettings }
@@ -204,6 +217,20 @@ export type WsClientMessage =
   | { type: "player:avatar"; avatarSeed: string }
   | { type: "guess"; text: string }
   | { type: "chat"; text: string }
+  | { type: "reaction"; emoji: Reaction }
+  | { type: "typing"; typing: boolean }
+  /** Host only: empty password removes it. */
+  | { type: "lobby:access"; password: string; allowLateJoin: boolean }
+  /** Leaves the room for good, without the reconnection grace period. */
+  | { type: "leave" }
+
+/** Emotes players can throw at everyone during a game. */
+export const REACTIONS = ["🔥", "😂", "😮", "😭", "👏", "🤯", "😡", "❤️"] as const
+export type Reaction = (typeof REACTIONS)[number]
+
+export function isReaction(value: unknown): value is Reaction {
+  return typeof value === "string" && (REACTIONS as readonly string[]).includes(value)
+}
 
 /** Accepts a Deezer playlist URL or a numeric id. Spotify links are rejected. */
 export function parseDeezerPlaylistId(input: string): string | null {

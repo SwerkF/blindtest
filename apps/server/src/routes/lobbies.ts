@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import { rooms, createRoom, addPlayer } from "@/game/engine"
+import { rooms, createRoom, addPlayer, joinRefusal, JoinRefusal } from "@/game/engine"
 
 function genCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase()
@@ -30,17 +30,32 @@ export default async function lobbiesRoute(fastify: FastifyInstance) {
   fastify.get<{ Params: { code: string } }>("/lobbies/:code", async (req, reply) => {
     const room = rooms.get(req.params.code.toUpperCase())
     if (!room) return reply.status(404).send({ error: "Salon introuvable" })
-    return { code: room.code, phase: room.phase, playerCount: room.players.size }
+    return {
+      code: room.code,
+      phase: room.phase,
+      playerCount: room.players.size,
+      hasPassword: room.password !== null,
+      allowLateJoin: room.allowLateJoin,
+    }
   })
 
-  fastify.post<{ Params: { code: string }; Body: { playerName: string; avatarSeed?: string } }>(
+  fastify.post<{ Params: { code: string }; Body: { playerName: string; avatarSeed?: string; password?: string } }>(
     "/lobbies/:code/join",
     async (req, reply) => {
       const { code } = req.params
       const { playerName } = req.body
       if (!playerName?.trim()) return reply.status(400).send({ error: "playerName requis" })
-      const room = rooms.get(code.toUpperCase())
-      if (!room) return reply.status(404).send({ error: "Salon introuvable" })
+      const refusal = joinRefusal(code.toUpperCase(), req.body.password)
+      if (refusal === JoinRefusal.NotFound) return reply.status(404).send({ error: "Salon introuvable" })
+      if (refusal === JoinRefusal.WrongPassword) {
+        return reply.status(401).send({
+          error: req.body.password ? "Mot de passe incorrect" : "Ce salon est protégé par un mot de passe",
+          needsPassword: true,
+        })
+      }
+      if (refusal === JoinRefusal.InProgress) {
+        return reply.status(403).send({ error: "La partie a déjà commencé, l'hôte n'accepte pas les retardataires" })
+      }
       const playerId = genId()
       const joined = addPlayer(code.toUpperCase(), playerId, playerName.trim(), avatarSeedFrom(req.body), () => {})
       if (!joined) return reply.status(409).send({ error: "Impossible de rejoindre" })

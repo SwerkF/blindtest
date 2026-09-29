@@ -17,8 +17,10 @@ import {
   type RoundOutcome,
   type RoundPublic,
   type WsServerMessage,
+  LOBBY_PASSWORD_MAX_LENGTH,
 } from "@blindmusic/shared"
-import type { AnimeMatch, Track } from "@/deezer"
+import type { Track } from "@/deezer"
+import { isCloseToAnswer, matchesAnswer } from "@/animeNames"
 import { fetchTrackLyrics } from "@/lyrics"
 import { normalize, similarity } from "@/game/text"
 
@@ -32,6 +34,9 @@ interface PlayerState {
   hasFoundBoth: boolean
   hasFoundYear: boolean
   yearGuessesLeft: number
+  roundPoints: number
+  /** Last reaction time, to keep emote spam in check. */
+  lastReactionAt: number
   connected: boolean
   dropTimer: ReturnType<typeof setTimeout> | null
   /** One entry per finished round, in play order. */
@@ -65,6 +70,10 @@ interface Room {
   waitingForTrack: boolean
   /** Tracks for the first round are being fetched, the game has not started yet. */
   preparing: boolean
+  /** Required to join through the invite code; null when the room is open. */
+  password: string | null
+  /** Whether newcomers may join once the game has started. */
+  allowLateJoin: boolean
 }
 
 /** Avatar strings carry the seed plus the customisation, see the web avatar codec. */
@@ -87,6 +96,8 @@ function newPlayer(
     hasFoundBoth: false,
     hasFoundYear: false,
     yearGuessesLeft,
+    roundPoints: 0,
+    lastReactionAt: 0,
     connected: false,
     dropTimer: null,
     outcomes: [],
@@ -126,6 +137,8 @@ function toPublic(room: Room): PlayerPublic[] {
     hasFoundArtist: p.hasFoundArtist,
     hasFoundTitle: p.hasFoundTitle,
     hasFoundBoth: p.hasFoundBoth,
+    hasFoundYear: p.hasFoundYear,
+    roundPoints: p.roundPoints,
     connected: p.connected,
   }))
 }
@@ -212,6 +225,8 @@ export function createRoom(
     expectedTotal: 0,
     waitingForTrack: false,
     preparing: false,
+    password: null,
+    allowLateJoin: true,
   }
   room.players.set(hostId, newPlayer(hostId, hostName, avatarSeed, 0, send))
   rooms.set(code, room)
@@ -293,7 +308,13 @@ export function removePlayer(code: string, playerId: string) {
     return
   }
   // Hand the room over so it never ends up without anyone able to start a game
-  if (room.hostId === playerId) room.hostId = room.players.keys().next().value!
+  if (room.hostId === playerId) {
+    room.hostId = room.players.keys().next().value!
+    // The new host now manages the password, so they need to see it
+    try {
+      room.players.get(room.hostId)?.send(accessMessage(room, true))
+    } catch {}
+  }
   broadcast(room, lobbyUpdate(room))
 }
 
@@ -373,6 +394,50 @@ export async function startGame(
   return room.gameId
 }
 
+function accessMessage(room: Room, forHost: boolean): WsServerMessage {
+  return {
+    type: "lobby:access",
+    hasPassword: room.password !== null,
+    allowLateJoin: room.allowLateJoin,
+    password: forHost ? (room.password ?? "") : undefined,
+  }
+}
+
+/** Access settings as one player should see them (the host also gets the password). */
+export function getAccess(code: string, playerId: string): WsServerMessage | null {
+  const room = rooms.get(code)
+  return room ? accessMessage(room, room.hostId === playerId) : null
+}
+
+export function setAccess(code: string, password: string, allowLateJoin: boolean) {
+  const room = rooms.get(code)
+  if (!room) return
+  const trimmed = password.trim().slice(0, LOBBY_PASSWORD_MAX_LENGTH)
+  room.password = trimmed || null
+  room.allowLateJoin = allowLateJoin
+  for (const p of room.players.values()) {
+    try {
+      p.send(accessMessage(room, p.id === room.hostId))
+    } catch {}
+  }
+}
+
+export enum JoinRefusal {
+  NotFound = "not_found",
+  WrongPassword = "wrong_password",
+  InProgress = "in_progress",
+}
+
+/** Why a newcomer may not join right now, or null if they may. */
+export function joinRefusal(code: string, password: string | undefined): JoinRefusal | null {
+  const room = rooms.get(code)
+  if (!room) return JoinRefusal.NotFound
+  if (room.password !== null && (password ?? "") !== room.password) return JoinRefusal.WrongPassword
+  const started = room.phase !== GamePhase.Lobby && room.phase !== GamePhase.End
+  if (started && !room.allowLateJoin) return JoinRefusal.InProgress
+  return null
+}
+
 /** Lobby-wide "loading" state while the host's start request fetches tracks. */
 export function setPreparing(code: string, active: boolean): boolean {
   const room = rooms.get(code)
@@ -424,6 +489,7 @@ function startRound(room: Room) {
     p.hasFoundTitle = false
     p.hasFoundBoth = false
     p.hasFoundYear = false
+    p.roundPoints = 0
     p.yearGuessesLeft = s.yearGuessAttempts
   }
   const track = room.tracks[room.currentRoundIndex]
@@ -576,6 +642,7 @@ export function restartToLobby(code: string) {
     p.hasFoundTitle = false
     p.hasFoundBoth = false
     p.hasFoundYear = false
+    p.roundPoints = 0
   }
   broadcastLobby(code)
 }
@@ -611,6 +678,25 @@ const YEAR_POINTS = 2
  * else is matched against the artist and the title.
  */
 export function processGuess(code: string, playerId: string, text: string): GuessResult | null {
+  const result = evaluateGuess(code, playerId, text)
+  const player = rooms.get(code)?.players.get(playerId)
+  if (result && player) player.roundPoints += result.pointsEarned
+  return result
+}
+
+const REACTION_COOLDOWN_MS = 400
+
+/** True when the player may send a reaction now (a light anti-spam). */
+export function allowReaction(code: string, playerId: string): boolean {
+  const player = rooms.get(code)?.players.get(playerId)
+  if (!player) return false
+  const now = Date.now()
+  if (now - player.lastReactionAt < REACTION_COOLDOWN_MS) return false
+  player.lastReactionAt = now
+  return true
+}
+
+function evaluateGuess(code: string, playerId: string, text: string): GuessResult | null {
   const room = rooms.get(code)
   const player = room?.players.get(playerId)
   if (!room || !player || room.phase !== GamePhase.Playing) return null
@@ -732,12 +818,6 @@ export function animePoints(elapsedMs: number, durationMs: number): number {
   return Math.round(ANIME_MIN_POINTS + (ANIME_MAX_POINTS - ANIME_MIN_POINTS) * left)
 }
 
-function matchesAnime(guess: string, anime: AnimeMatch, maxErr: number): boolean {
-  const compact = guess.replace(/\s/g, "")
-  // Abbreviations are too short for fuzzy matching: exact only
-  if (anime.acronyms.includes(compact)) return true
-  return anime.names.some((name) => isMatch(guess, name, maxErr))
-}
 
 /**
  * Anime mode: the answer is the anime, worth more the faster it is found.
@@ -751,7 +831,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
 
   const maxErr = room.settings!.maxErrorPercent
   const guess = normalize(raw)
-  const animeMatch = !player.hasFoundBoth && matchesAnime(guess, anime, maxErr)
+  const animeMatch = !player.hasFoundBoth && matchesAnswer(raw, anime, maxErr)
   const artistMatch = !player.hasFoundArtist && anime.artists.some((a) => isMatch(guess, a, maxErr))
 
   let pointsEarned = 0
@@ -777,7 +857,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
   else if (animeMatch) matched = GuessMatch.Anime
   else if (artistMatch) matched = GuessMatch.Artist
   else if (
-    (!player.hasFoundBoth && anime.names.some((name) => isClose(guess, name, maxErr))) ||
+    (!player.hasFoundBoth && isCloseToAnswer(raw, anime, maxErr)) ||
     (!player.hasFoundArtist && anime.artists.some((a) => isClose(guess, a, maxErr)))
   ) {
     matched = GuessMatch.Close

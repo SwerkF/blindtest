@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, Navigate } from "react-router-dom"
 import {
   ChatCircle,
   Trophy,
@@ -13,6 +13,8 @@ import {
   ArrowCounterClockwise,
   Microphone,
   Television,
+  Smiley,
+  SignOut,
 } from "@phosphor-icons/react"
 import type {
   AnimeReveal,
@@ -21,6 +23,7 @@ import type {
   PlayerPublic,
   RoundOutcome,
   RoundPublic,
+  Reaction,
   WsServerMessage,
 } from "@blindmusic/shared"
 import {
@@ -30,18 +33,21 @@ import {
   GameMode,
   GamePhase,
   GuessMatch,
+  ErrorCode,
   HintKind,
+  REACTIONS,
   themeLabel,
 } from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
-import { loadSession } from "@/utils/api"
+import { clearSession, loadSession } from "@/utils/api"
 import { appendHistory } from "@/utils/storage"
 import { Cue, playCue } from "@/utils/audio"
 import Visualizer from "@/components/Visualizer"
-import Avatar from "@/components/Avatar"
+import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
-import ThemeToggle from "@/components/ThemeToggle"
+import SettingsMenu from "@/components/SettingsMenu"
+import Modal from "@/components/Modal"
 
 interface ChatMsg {
   id: number
@@ -98,6 +104,25 @@ function matchLabel(matched: GuessMatch, anime: boolean): string {
 function animeCaption(anime: AnimeReveal): string {
   const themes = anime.themes.map(themeLabel).join(" / ")
   return [themes, anime.year].filter(Boolean).join(" · ")
+}
+
+interface Floater {
+  key: number
+  emoji: Reaction
+  /** Horizontal position on the stage, in percent. */
+  left: number
+}
+
+/** Guesses are shown with a leading capital, whatever the player typed. */
+function capitalize(text: string): string {
+  return text.charAt(0).toLocaleUpperCase("fr") + text.slice(1)
+}
+
+function withoutId(set: Set<string>, id: string): Set<string> {
+  if (!set.has(id)) return set
+  const next = new Set(set)
+  next.delete(id)
+  return next
 }
 
 function secondsUntil(target: number, now: number): number {
@@ -157,6 +182,46 @@ function TrackScore({ outcome, anime }: { outcome: RoundOutcome | undefined; ani
   )
 }
 
+/** What the player found this round: artist / title / year (anime / singer / year in anime mode). */
+function FoundBadges({ player, anime }: { player: PlayerPublic; anime: boolean }) {
+  const items = anime
+    ? [
+        { found: player.hasFoundTitle, label: "Animé", Icon: Television },
+        { found: player.hasFoundArtist, label: "Auteur", Icon: Microphone },
+        { found: player.hasFoundYear, label: "Année", Icon: Calendar },
+      ]
+    : [
+        { found: player.hasFoundArtist, label: "Artiste", Icon: Microphone },
+        { found: player.hasFoundTitle, label: "Titre", Icon: MusicNotes },
+        { found: player.hasFoundYear, label: "Année", Icon: Calendar },
+      ]
+  return (
+    <div className="flex gap-1 mt-1">
+      {items.map(({ found, label, Icon }) => (
+        <span
+          key={label}
+          title={`${label}${found ? " trouvé" : " pas encore trouvé"}`}
+          aria-label={`${label}${found ? " trouvé" : " pas encore trouvé"}`}
+          className={`inline-flex items-center justify-center w-6 h-6 rounded-md transition-colors duration-300 ${
+            found ? "bg-accent text-white animate-pop" : "bg-edge/70 text-muted"
+          }`}
+        >
+          <Icon size={13} weight={found ? "fill" : "bold"} />
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/** Gold crown with a glint, for the player in the lead. */
+function LeaderCrown() {
+  return (
+    <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none" title="En tête">
+      <span className="crown w-6 h-6" />
+    </span>
+  )
+}
+
 export default function Game() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
@@ -184,6 +249,13 @@ export default function Game() {
   const [yearGuessesLeft, setYearGuessesLeft] = useState(0)
   const [endState, setEndState] = useState<EndState | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  /** Players currently typing a guess or a chat message. */
+  const [typingIds, setTypingIds] = useState<Set<string>>(() => new Set())
+  /** Latest emote per player, shown as a bubble on their avatar. */
+  const [bubbles, setBubbles] = useState<Record<string, { emoji: Reaction; key: number }>>({})
+  /** Emotes drifting up the stage for everyone to see. */
+  const [floaters, setFloaters] = useState<Floater[]>([])
+  const [confirmLeave, setConfirmLeave] = useState(false)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const guessInputRef = useRef<HTMLInputElement>(null)
@@ -192,6 +264,10 @@ export default function Game() {
   const historySaved = useRef(false)
   /** Only games followed live end up in the history, not a recap seen after a refresh. */
   const playedLive = useRef(false)
+  const typingSentRef = useRef(false)
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Countdown second the tick was last played for, so each of 3, 2, 1 beeps once. */
+  const tickedRef = useRef<number | null>(null)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 200)
@@ -205,6 +281,13 @@ export default function Game() {
   useEffect(() => {
     return onMessage((msg: WsServerMessage) => {
       switch (msg.type) {
+        case "error":
+          if (msg.code === ErrorCode.RoomNotFound) {
+            clearSession(code!)
+            navigate("/", { replace: true, state: { notice: "Cette partie n'existe pas ou plus." } })
+          }
+          break
+
         case "lobby:update":
           setPlayers(msg.players)
           setScores(Object.fromEntries(msg.players.map((p) => [p.id, p.score])))
@@ -225,7 +308,7 @@ export default function Game() {
           setRound(null)
           setPhase(GamePhase.Playing)
           historySaved.current = false
-          playCue(Cue.Countdown)
+          tickedRef.current = null
           break
 
         case "round:start":
@@ -243,7 +326,14 @@ export default function Game() {
           setYearGuessesLeft(settingsRef.current?.yearGuessAttempts ?? 0)
           // Clear the per-round found markers; the server already reset them
           setPlayers((prev) =>
-            prev.map((p) => ({ ...p, hasFoundArtist: false, hasFoundTitle: false, hasFoundBoth: false }))
+            prev.map((p) => ({
+              ...p,
+              hasFoundArtist: false,
+              hasFoundTitle: false,
+              hasFoundBoth: false,
+              hasFoundYear: false,
+              roundPoints: 0,
+            }))
           )
           break
 
@@ -275,6 +365,8 @@ export default function Game() {
                       msg.matched === GuessMatch.Both ||
                       msg.matched === GuessMatch.Anime ||
                       msg.matched === GuessMatch.AnimeAndArtist,
+                    hasFoundYear: p.hasFoundYear || msg.matched === GuessMatch.Year,
+                    roundPoints: p.roundPoints + msg.pointsEarned,
                   }
                 : p
             )
@@ -325,7 +417,28 @@ export default function Game() {
 
         case "chat:message":
           setChat((prev) => [...prev, { id: idRef.current++, ...msg }])
+          setTypingIds((prev) => withoutId(prev, msg.playerId))
           break
+
+        case "player:typing":
+          setTypingIds((prev) => (msg.typing ? new Set(prev).add(msg.playerId) : withoutId(prev, msg.playerId)))
+          break
+
+        case "reaction": {
+          const key = idRef.current++
+          setBubbles((prev) => ({ ...prev, [msg.playerId]: { emoji: msg.emoji, key } }))
+          setFloaters((prev) => [...prev.slice(-11), { key, emoji: msg.emoji, left: 10 + Math.random() * 80 }])
+          setTimeout(() => {
+            setFloaters((prev) => prev.filter((f) => f.key !== key))
+            setBubbles((prev) => {
+              if (prev[msg.playerId]?.key !== key) return prev
+              const next = { ...prev }
+              delete next[msg.playerId]
+              return next
+            })
+          }, 2600)
+          break
+        }
 
         case "game:end":
           setEndState({ scores: msg.scores, playerNames: msg.playerNames, tracks: msg.tracks })
@@ -364,6 +477,14 @@ export default function Game() {
       ? Math.max(0, Math.min(100, ((roundEndsAt - now) / round.duration) * 100))
       : 0
   const countdownLeft = countdownTo ? secondsUntil(countdownTo, now) : 0
+
+  // Beep on 3, 2, 1 rather than once when the countdown starts
+  useEffect(() => {
+    if (!countdownTo || countdownLeft < 1 || countdownLeft > 3) return
+    if (tickedRef.current === countdownLeft) return
+    tickedRef.current = countdownLeft
+    playCue(Cue.Countdown)
+  }, [countdownTo, countdownLeft])
   const revealLeft = reveal ? secondsUntil(reveal.nextAt, now) : 0
   const isCountdown = countdownTo !== null && countdownLeft > 0
   const canGuess = phase === GamePhase.Playing && !isCountdown && round !== null
@@ -377,6 +498,13 @@ export default function Game() {
     () => [...players].sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0)),
     [players, scores]
   )
+  // The crown only goes to a clear, scoring leader
+  const leaderId = useMemo(() => {
+    const [first, second] = sortedPlayers
+    const top = first ? (scores[first.id] ?? 0) : 0
+    if (!first || top <= 0) return null
+    return second && (scores[second.id] ?? 0) === top ? null : first.id
+  }, [sortedPlayers, scores])
 
   useEffect(() => {
     if (canGuess) guessInputRef.current?.focus()
@@ -394,90 +522,153 @@ export default function Game() {
     navigate(`/lobby/${code}`)
   }
 
+  /** Tells the others we are typing, then that we stopped once idle for a moment. */
+  function signalTyping(text: string) {
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+    if (!text.trim()) {
+      stopTyping()
+      return
+    }
+    if (!typingSentRef.current) {
+      typingSentRef.current = true
+      send({ type: "typing", typing: true })
+    }
+    typingTimerRef.current = setTimeout(stopTyping, 2500)
+  }
+
+  function stopTyping() {
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+    typingTimerRef.current = null
+    if (!typingSentRef.current) return
+    typingSentRef.current = false
+    send({ type: "typing", typing: false })
+  }
+
+  function sendReaction(emoji: Reaction) {
+    send({ type: "reaction", emoji })
+  }
+
+  function leaveGame() {
+    setConfirmLeave(false)
+    stopTyping()
+    send({ type: "leave" })
+    clearSession(code!)
+    navigate("/", { replace: true })
+  }
+
   function submitGuess() {
     const text = guessInput.trim()
     if (!canGuess || !text) return
     send({ type: "guess", text })
     setGuessInput("")
+    stopTyping()
   }
 
   function submitChat() {
     if (!chatInput.trim()) return
     send({ type: "chat", text: chatInput.trim() })
     setChatInput("")
+    stopTyping()
   }
 
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-canvas flex items-center justify-center">
-        <p className="text-muted animate-fade">
-          Session expirée.{" "}
-          <a href="/" className="text-accent hover:underline">
-            Retour à l'accueil
-          </a>
-        </p>
-      </div>
-    )
-  }
+  // No seat in this room from this tab: the join page checks the room exists and asks for a pseudo
+  if (!session) return <Navigate to={`/join/${code}`} replace />
 
   const ranking = endState ? Object.entries(endState.scores).sort((a, b) => b[1] - a[1]) : []
 
   return (
-    <div className="h-screen bg-canvas grid grid-cols-[240px_1fr_260px] overflow-hidden">
+    <div className="h-screen bg-canvas grid grid-cols-[290px_1fr_310px] overflow-hidden">
       {/* Joueurs */}
       <aside className="bg-surface border-r border-edge flex flex-col overflow-hidden">
         <div className="p-4 border-b border-edge flex items-center justify-between">
           <h3 className="font-bold text-ink text-sm uppercase tracking-wider">Joueurs</h3>
-          <ThemeToggle />
+          <SettingsMenu />
         </div>
         <ul className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-          {sortedPlayers.map((p, i) => (
-            <li
-              key={p.id}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 animate-rise hover:brightness-105 ${
-                p.id === session.playerId ? "bg-accent/10 border border-accent/20" : "bg-edge/40"
-              } ${p.connected ? "" : "opacity-40"}`}
-            >
-              <span className="text-xs text-muted font-mono w-4 text-center">{i + 1}</span>
-              <Avatar
-                name={p.avatarSeed || p.name}
-                size={48}
-                onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-ink text-sm truncate">{p.name}</p>
-                <div className="flex gap-1 mt-1">
-                  <span
-                    className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                      (isAnime ? p.hasFoundTitle : p.hasFoundArtist) ? "bg-accent" : "bg-edge"
-                    }`}
-                    title={isAnime ? "Animé" : "Artiste"}
+          {sortedPlayers.map((p, i) => {
+            const total = scores[p.id] ?? 0
+            const status = !p.connected
+              ? PlayerStatus.Offline
+              : typingIds.has(p.id)
+                ? PlayerStatus.Typing
+                : PlayerStatus.Online
+            const bubble = bubbles[p.id]
+            return (
+              <li
+                key={p.id}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 animate-rise hover:brightness-105 ${
+                  p.id === session.playerId ? "bg-accent/10 border border-accent/20" : "bg-edge/40"
+                } ${p.connected ? "" : "opacity-60"}`}
+              >
+                <span className="text-xs text-muted font-mono w-4 text-center">{i + 1}</span>
+                <div className="relative shrink-0">
+                  {p.id === leaderId && <LeaderCrown />}
+                  <Avatar
+                    name={p.avatarSeed || p.name}
+                    size={52}
+                    status={status}
+                    onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
                   />
-                  <span
-                    className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                      (isAnime ? p.hasFoundArtist : p.hasFoundTitle) ? "bg-accent" : "bg-edge"
-                    }`}
-                    title={isAnime ? "Auteur" : "Titre"}
-                  />
+                  {bubble && (
+                    <span
+                      key={bubble.key}
+                      className="absolute -bottom-2 -left-3 text-2xl leading-none animate-reaction pointer-events-none"
+                    >
+                      {bubble.emoji}
+                    </span>
+                  )}
                 </div>
-              </div>
-              <span className="font-bold text-ink text-lg tabular-nums">{scores[p.id] ?? 0}</span>
-            </li>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-ink text-sm truncate">{p.name}</p>
+                  {status === PlayerStatus.Typing ? (
+                    <p className="text-[11px] text-amber-500 mt-1">écrit…</p>
+                  ) : (
+                    <FoundBadges player={p} anime={isAnime} />
+                  )}
+                </div>
+                <div className="flex items-baseline gap-1.5 shrink-0">
+                  {p.roundPoints > 0 && (
+                    <span key={p.roundPoints} className="text-xs font-bold text-accent tabular-nums animate-pop">
+                      +{p.roundPoints}
+                    </span>
+                  )}
+                  <span className="font-bold text-ink text-lg tabular-nums">{total}</span>
+                </div>
+              </li>
+            )
+          })}
         </ul>
-        {round && phase !== GamePhase.End && (
-          <div className="p-3 border-t border-edge text-center">
-            <p className="text-xs text-muted">
-              Manche {round.trackIndex} / {round.total}
-            </p>
-          </div>
-        )}
+        <div className="p-3 border-t border-edge flex items-center justify-between gap-2">
+          <p className="text-xs text-muted">
+            {round && phase !== GamePhase.End ? `Manche ${round.trackIndex} / ${round.total}` : ""}
+          </p>
+          <button
+            type="button"
+            onClick={() => setConfirmLeave(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+          >
+            <SignOut size={14} weight="bold" />
+            Quitter
+          </button>
+        </div>
       </aside>
 
       {/* Centre */}
       <main className="flex flex-col overflow-hidden relative">
+        {/* Réactions qui s'envolent sur la scène */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-20">
+          {floaters.map((f) => (
+            <span
+              key={f.key}
+              className="absolute bottom-28 text-5xl animate-float-up"
+              style={{ left: `${f.left}%` }}
+            >
+              {f.emoji}
+            </span>
+          ))}
+        </div>
         {!connected && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 text-xs text-muted bg-surface/90 backdrop-blur px-3 py-1.5 rounded-full border border-edge animate-fade">
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 text-xs text-muted bg-surface px-3 py-1.5 rounded-full border border-edge animate-fade">
             <span className="w-2 h-2 rounded-full bg-muted animate-pulse" />
             Reconnexion…
           </div>
@@ -623,8 +814,8 @@ export default function Game() {
               <div className="h-24 shrink-0 relative">
                 <Visualizer previewUrl={round?.previewUrl ?? null} isPlaying={canGuess} seekTo={seekTo} />
                 {isCountdown && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-pitch/85 backdrop-blur-sm rounded-xl gap-4 animate-fade">
-                    <span className="text-khaki text-xs uppercase tracking-widest">Départ dans</span>
+                  <div className="absolute inset-0 flex items-center justify-center bg-stage/90 rounded-xl gap-4 animate-fade">
+                    <span className="text-white/70 text-xs uppercase tracking-widest">Départ dans</span>
                     <span className="text-toffee text-4xl font-black tabular-nums leading-none animate-pop">
                       {countdownLeft}
                     </span>
@@ -739,7 +930,7 @@ export default function Game() {
                                     hit ? "text-ink font-semibold" : warm ? "text-ink" : "text-muted"
                                   }`}
                                 >
-                                  {g.text}
+                                  {capitalize(g.text)}
                                 </span>
                                 {g.points > 0 && (
                                   <span className="text-sm font-bold text-accent tabular-nums shrink-0">
@@ -762,7 +953,7 @@ export default function Game() {
               )}
             </div>
 
-            <div className="p-5 pt-3 border-t border-edge bg-surface/60 backdrop-blur">
+            <div className="p-5 pt-3 border-t border-edge bg-surface/60">
               {(hints[HintKind.Artist] || hints[HintKind.Title]) && (
                 <div className="mb-2.5 flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
                   {hints[HintKind.Artist] && (
@@ -793,7 +984,10 @@ export default function Game() {
                 <input
                   ref={guessInputRef}
                   value={guessInput}
-                  onChange={(e) => setGuessInput(e.target.value)}
+                  onChange={(e) => {
+                    setGuessInput(e.target.value)
+                    signalTyping(e.target.value)
+                  }}
                   onKeyDown={(e) => e.key === "Enter" && submitGuess()}
                   placeholder={isAnime ? "Nom de l'animé, auteur ou année…" : "Artiste, titre ou année…"}
                   disabled={!canGuess}
@@ -857,10 +1051,34 @@ export default function Game() {
           <div ref={chatEndRef} />
         </div>
 
-        <div className="p-4 border-t border-edge flex items-center gap-2">
+        {/* Réactions : visibles par tout le monde */}
+        <div className="px-4 pt-3 border-t border-edge">
+          <p className="text-[11px] text-muted font-medium uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Smiley size={13} weight="bold" />
+            Réagir
+          </p>
+          <div className="grid grid-cols-8 gap-1">
+            {REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => sendReaction(emoji)}
+                aria-label={`Réagir ${emoji}`}
+                className="aspect-square flex items-center justify-center text-xl rounded-lg hover:bg-edge/70 hover:scale-125 active:scale-95 transition-transform"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-4 flex items-center gap-2">
           <input
             value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
+            onChange={(e) => {
+              setChatInput(e.target.value)
+              signalTyping(e.target.value)
+            }}
             onKeyDown={(e) => e.key === "Enter" && submitChat()}
             placeholder="Message…"
             maxLength={200}
@@ -878,6 +1096,35 @@ export default function Game() {
 
       {editingAvatar && (
         <AvatarEditor value={profile.avatarSeed} onClose={() => setEditingAvatar(false)} onSave={saveAvatar} />
+      )}
+
+      {confirmLeave && (
+        <Modal
+          title="Quitter la partie ?"
+          onClose={() => setConfirmLeave(false)}
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmLeave(false)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-muted hover:text-ink hover:bg-edge/60 transition-colors"
+              >
+                Rester
+              </button>
+              <button
+                type="button"
+                onClick={leaveGame}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                <SignOut size={16} weight="bold" />
+                Quitter
+              </button>
+            </>
+          }
+        >
+          Tu quittes le salon et ton score de cette partie est perdu. Tu pourras revenir avec le code si l'hôte
+          accepte les nouveaux joueurs.
+        </Modal>
       )}
     </div>
   )

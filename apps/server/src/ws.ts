@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import { GameMode, GamePhase, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
+import { ErrorCode, GameMode, GamePhase, isReaction, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
 import {
   rooms,
   registerSocket,
@@ -15,6 +15,10 @@ import {
   setPreparing,
   appendTracks,
   finishTrackLoading,
+  allowReaction,
+  getAccess,
+  setAccess,
+  removePlayer,
 } from "@/game/engine"
 import { fetchTrackPool, pickRandomTracks } from "@/deezer"
 import { streamAnimeTracks } from "@/anime"
@@ -37,13 +41,15 @@ export default async function wsRoute(fastify: FastifyInstance) {
 
     const registered = registerSocket(code, playerId, send)
     if (!registered) {
-      send({ type: "error", message: "Salon introuvable ou joueur inconnu" })
+      send({ type: "error", message: "Salon introuvable ou joueur inconnu", code: ErrorCode.RoomNotFound })
       socket.close()
       return
     }
 
     // Tell everyone (including the joiner) about the updated roster
     broadcastLobby(code)
+    const access = getAccess(code, playerId)
+    if (access) send(access)
 
     // Resume an in-progress round so page navigation does not skip the track
     const current = getCurrentRound(code)
@@ -150,6 +156,40 @@ export default async function wsRoute(fastify: FastifyInstance) {
 
         case "player:avatar": {
           updateAvatar(code, playerId, msg.avatarSeed)
+          break
+        }
+
+        case "lobby:access": {
+          if (room.hostId !== playerId) return
+          setAccess(code, String(msg.password ?? ""), Boolean(msg.allowLateJoin))
+          break
+        }
+
+        case "leave": {
+          removePlayer(code, playerId)
+          socket.close()
+          break
+        }
+
+        case "reaction": {
+          if (!isReaction(msg.emoji) || !allowReaction(code, playerId)) return
+          const reaction: WsServerMessage = { type: "reaction", playerId, emoji: msg.emoji, at: Date.now() }
+          for (const p of room.players.values()) {
+            try {
+              p.send(reaction)
+            } catch {}
+          }
+          break
+        }
+
+        case "typing": {
+          const typing: WsServerMessage = { type: "player:typing", playerId, typing: Boolean(msg.typing) }
+          for (const p of room.players.values()) {
+            if (p.id === playerId) continue
+            try {
+              p.send(typing)
+            } catch {}
+          }
           break
         }
 

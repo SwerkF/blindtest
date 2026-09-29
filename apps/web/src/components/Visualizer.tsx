@@ -11,6 +11,18 @@ interface Props {
 
 const BAR_COUNT = 40
 
+/** "#rrggbb" blended towards white by `amount` (0..1). */
+function mixWithWhite(hex: string, amount: number): string {
+  const m = hex.match(/^#([0-9a-f]{6})$/i)
+  if (!m) return hex
+  const n = Number.parseInt(m[1], 16)
+  const channel = (shift: number) => {
+    const c = (n >> shift) & 0xff
+    return Math.round(c + (255 - c) * amount)
+  }
+  return `rgb(${channel(16)}, ${channel(8)}, ${channel(0)})`
+}
+
 function draw(ctx: CanvasRenderingContext2D, w: number, h: number, data: Uint8Array<ArrayBuffer> | null, t: number) {
   ctx.clearRect(0, 0, w, h)
 
@@ -18,13 +30,11 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, data: Uint8Ar
   const barW = slot * 0.6
   const gap = slot * 0.4
 
+  // Bars follow the theme accent, lightening towards the top
+  const accent = getComputedStyle(ctx.canvas).getPropertyValue("--color-accent").trim() || "#946846"
   const grad = ctx.createLinearGradient(0, h, 0, 0)
-  grad.addColorStop(0, "#946846")
-  grad.addColorStop(0.7, "#c89060")
-  grad.addColorStop(1, "#f7c480")
-
-  ctx.shadowColor = "#946846"
-  ctx.shadowBlur = 8
+  grad.addColorStop(0, accent)
+  grad.addColorStop(1, mixWithWhite(accent, 0.45))
 
   for (let i = 0; i < BAR_COUNT; i++) {
     let value: number
@@ -174,25 +184,25 @@ export default function Visualizer({ previewUrl, isPlaying, seekTo = 0 }: Props)
   }, [])
 
   return (
-    <div className="relative w-full h-full bg-pitch rounded-xl overflow-hidden">
+    <div className="relative w-full h-full bg-stage rounded-xl overflow-hidden">
       <audio ref={audioRef} />
       <canvas ref={canvasRef} className="w-full h-full" />
 
       {blocked && isPlaying && (
         <button
           onClick={() => void start()}
-          className="absolute inset-0 flex items-center justify-center gap-2 bg-pitch/85 backdrop-blur-sm text-smoke font-semibold text-sm"
+          className="absolute inset-0 flex items-center justify-center gap-2 bg-stage/90 text-white font-semibold text-sm"
         >
           <Play size={18} weight="fill" className="text-toffee" />
           Activer le son
         </button>
       )}
 
-      <div className="absolute top-2 right-2 flex items-center gap-2 bg-pitch/70 backdrop-blur rounded-full pl-2 pr-3 py-1.5">
+      <div className="absolute top-2 right-2 flex items-center gap-2 bg-stage/80 rounded-full pl-2 pr-3 py-1.5">
         <button
           onClick={() => setMuted(!muted)}
           aria-label={muted ? "Rétablir le son" : "Couper le son"}
-          className="text-khaki hover:text-toffee transition-colors"
+          className="text-white/60 hover:text-toffee transition-colors"
         >
           {muted || volume === 0 ? <SpeakerSlash size={15} /> : <SpeakerHigh size={15} />}
         </button>

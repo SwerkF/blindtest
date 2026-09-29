@@ -3,7 +3,7 @@ import { Moon, Sun } from "@phosphor-icons/react"
 
 const KEY = "blindtest:theme"
 
-function prefersDark(): boolean {
+export function prefersDark(): boolean {
   const stored = localStorage.getItem(KEY)
   if (stored) return stored === "dark"
   return window.matchMedia("(prefers-color-scheme: dark)").matches

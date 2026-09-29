@@ -72,7 +72,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-pitch/60 backdrop-blur-sm p-4 animate-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-pitch/60 p-4 animate-fade"
       onClick={onClose}
     >
       <div

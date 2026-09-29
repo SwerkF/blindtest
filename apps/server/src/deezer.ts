@@ -72,7 +72,9 @@ export function cleanTitle(track: { title: string; title_short?: string }): stri
   }
 
   stripped = stripped
-    .replace(/\s*[-–—]\s*(radio edit|remix|remaster(ed)?|version|edit|live|single|mix|bonus track).*$/i, "")
+    .replace(/\s*[-–—|]\s*(radio edit|remix|remaster(ed)?|version|edit|live|single|mix|bonus track).*$/i, "")
+    // Session tags from video channels: "Gurenge - A COLORS SHOW"
+    .replace(/\s*[-–—|:]?\s*\b(a\s+)?colou?rs\s+show\b.*$/i, "")
     .replace(/\s*\b(feat|ft|featuring)\b\.?\s.*$/i, "")
     .replace(/[()[\]{}]/g, " ")
     .replace(/\s{2,}/g, " ")
