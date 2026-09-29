@@ -12,14 +12,28 @@ export interface PlaylistItem {
   category: GameMode
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** The room is password protected and the given one was missing or wrong. */
+    readonly needsPassword = false
+  ) {
+    super(message)
+  }
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
     ...options,
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Erreur réseau" }))
-    throw new Error((err as { error: string }).error ?? "Erreur")
+    const err = (await res.json().catch(() => ({ error: "Erreur réseau" }))) as {
+      error?: string
+      needsPassword?: boolean
+    }
+    throw new ApiError(err.error ?? "Erreur", res.status, Boolean(err.needsPassword))
   }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
@@ -34,14 +48,16 @@ export const api = {
       body: JSON.stringify({ playerName, avatarSeed }),
     }),
 
-  joinLobby: (code: string, playerName: string, avatarSeed: string) =>
+  joinLobby: (code: string, playerName: string, avatarSeed: string, password?: string) =>
     req<{ code: string; playerId: string; playerName: string }>(`/lobbies/${code}/join`, {
       method: "POST",
-      body: JSON.stringify({ playerName, avatarSeed }),
+      body: JSON.stringify({ playerName, avatarSeed, password }),
     }),
 
   lobbyInfo: (code: string) =>
-    req<{ code: string; phase: GamePhase; playerCount: number }>(`/lobbies/${code}`),
+    req<{ code: string; phase: GamePhase; playerCount: number; hasPassword: boolean; allowLateJoin: boolean }>(
+      `/lobbies/${code}`
+    ),
 
   deezerPlaylist: (id: string) => req<DeezerPlaylistMeta>(`/deezer/playlists/${id}`),
 
@@ -63,6 +79,10 @@ export function inviteUrl(code: string): string {
 
 export function saveSession(code: string, playerId: string, playerName: string) {
   sessionStorage.setItem(`blindtest:${code}`, JSON.stringify({ playerId, playerName }))
+}
+
+export function clearSession(code: string) {
+  sessionStorage.removeItem(`blindtest:${code}`)
 }
 
 export function loadSession(code: string): { playerId: string; playerName: string } | null {

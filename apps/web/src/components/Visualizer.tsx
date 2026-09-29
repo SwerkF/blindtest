@@ -181,14 +181,14 @@ export default function Visualizer({ previewUrl, isPlaying, seekTo = 0 }: Props)
       {blocked && isPlaying && (
         <button
           onClick={() => void start()}
-          className="absolute inset-0 flex items-center justify-center gap-2 bg-pitch/85 backdrop-blur-sm text-smoke font-semibold text-sm"
+          className="absolute inset-0 flex items-center justify-center gap-2 bg-pitch/85 text-smoke font-semibold text-sm"
         >
           <Play size={18} weight="fill" className="text-toffee" />
           Activer le son
         </button>
       )}
 
-      <div className="absolute top-2 right-2 flex items-center gap-2 bg-pitch/70 backdrop-blur rounded-full pl-2 pr-3 py-1.5">
+      <div className="absolute top-2 right-2 flex items-center gap-2 bg-pitch/70 rounded-full pl-2 pr-3 py-1.5">
         <button
           onClick={() => setMuted(!muted)}
           aria-label={muted ? "Rétablir le son" : "Couper le son"}

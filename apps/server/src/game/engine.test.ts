@@ -11,6 +11,11 @@ import {
   removePlayer,
   restartToLobby,
   buildHint,
+  allowReaction,
+  rooms,
+  joinRefusal,
+  JoinRefusal,
+  setAccess,
 } from "@/game/engine"
 
 const TRACK: Track = {
@@ -257,4 +262,47 @@ test("cleanTitle retire les mentions impossibles a deviner", () => {
   expect(cleanTitle({ title: "(I Can't Get No) Satisfaction", title_short: "(I Can't Get No) Satisfaction" })).toBe(
     "Satisfaction"
   )
+})
+
+test("cleanTitle retire la mention A COLORS SHOW", () => {
+  expect(cleanTitle({ title: "Gurenge - A COLORS SHOW" })).toBe("Gurenge")
+  expect(cleanTitle({ title: "Bad Habits | A COLORS SHOW" })).toBe("Bad Habits")
+  expect(cleanTitle({ title: "Idol (A COLORS SHOW)" })).toBe("Idol")
+})
+
+test("les points de la manche s'additionnent puis repartent a zero", async () => {
+  const r = await room("RP1", ["a"])
+
+  processGuess("RP1", "a", "Celine Dion")
+  processGuess("RP1", "a", "2001")
+  const player = rooms.get("RP1")!.players.get("a")!
+  expect(player.roundPoints).toBe(7)
+  expect(player.hasFoundYear).toBe(true)
+
+  r.cleanup()
+})
+
+test("les reactions sont limitees contre le spam", async () => {
+  const r = await room("RE1", ["a"])
+  expect(allowReaction("RE1", "a")).toBe(true)
+  expect(allowReaction("RE1", "a")).toBe(false)
+  await Bun.sleep(420)
+  expect(allowReaction("RE1", "a")).toBe(true)
+  r.cleanup()
+})
+
+test("mot de passe et arrivee en cours de partie", async () => {
+  const r = await room("AC1", ["a"])
+  expect(joinRefusal("NOPE", undefined)).toBe(JoinRefusal.NotFound)
+  // Partie en cours, retardataires acceptes par defaut
+  expect(joinRefusal("AC1", undefined)).toBeNull()
+
+  setAccess("AC1", " secret ", true)
+  expect(joinRefusal("AC1", undefined)).toBe(JoinRefusal.WrongPassword)
+  expect(joinRefusal("AC1", "faux")).toBe(JoinRefusal.WrongPassword)
+  expect(joinRefusal("AC1", "secret")).toBeNull()
+
+  setAccess("AC1", "", false)
+  expect(joinRefusal("AC1", undefined)).toBe(JoinRefusal.InProgress)
+  r.cleanup()
 })

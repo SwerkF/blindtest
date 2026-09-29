@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react"
-import { useNavigate, useParams, Link } from "react-router-dom"
-import { MusicNote, ArrowRight, Link as LinkIcon, PaintBrush } from "@phosphor-icons/react"
-import { api, loadSession, saveSession } from "@/utils/api"
+import { useLocation, useNavigate, useParams, Link } from "react-router-dom"
+import { MusicNote, ArrowRight, Link as LinkIcon, PaintBrush, LockSimple, Info } from "@phosphor-icons/react"
+import { ApiError, api, loadSession, saveSession } from "@/utils/api"
 import { loadHistory, type GameHistoryEntry } from "@/utils/storage"
 import { GamePhase } from "@blindmusic/shared"
 import { useProfile } from "@/hooks/useProfile"
 import Avatar from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
-import ThemeToggle from "@/components/ThemeToggle"
+import SettingsMenu from "@/components/SettingsMenu"
 
 type Mode = "idle" | "create" | "join"
 
@@ -37,6 +37,10 @@ export default function Home() {
   const [error, setError] = useState("")
   const [editingAvatar, setEditingAvatar] = useState(false)
   const [inviteInfo, setInviteInfo] = useState<string | null>(null)
+  const [password, setPassword] = useState("")
+  const [needsPassword, setNeedsPassword] = useState(false)
+  // Set when bounced here from a room that no longer exists, or after leaving one
+  const notice = (useLocation().state as { notice?: string } | null)?.notice
 
   useEffect(() => {
     if (!invitedCode) return
@@ -48,14 +52,27 @@ export default function Home() {
     }
     api
       .lobbyInfo(upper)
-      .then((info) =>
+      .then((info) => {
+        setNeedsPassword(info.hasPassword)
+        const inGame = info.phase !== GamePhase.Lobby && info.phase !== GamePhase.End
         setInviteInfo(
-          info.phase === GamePhase.Lobby
+          !inGame
             ? `${info.playerCount} joueur${info.playerCount > 1 ? "s" : ""} dans le salon`
-            : "Partie en cours, tu rejoins en direct"
+            : info.allowLateJoin
+              ? "Partie en cours, tu rejoins en direct"
+              : "Partie en cours, l'hôte n'accepte pas de nouveaux joueurs"
         )
-      )
-      .catch((caught: unknown) => setError(errorMessage(caught)))
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof ApiError && caught.status === 404) {
+          // Same page instance on "/": drop the invite form along with the dead code
+          setMode("idle")
+          setCode("")
+          navigate("/", { replace: true, state: { notice: "Cette partie n'existe pas ou plus." } })
+          return
+        }
+        setError(errorMessage(caught))
+      })
   }, [invitedCode, navigate])
 
   async function handleCreate() {
@@ -79,10 +96,16 @@ export default function Home() {
     setLoading(true)
     setError("")
     try {
-      const res = await api.joinLobby(code.trim().toUpperCase(), profile.name.trim(), profile.avatarSeed)
+      const res = await api.joinLobby(
+        code.trim().toUpperCase(),
+        profile.name.trim(),
+        profile.avatarSeed,
+        password || undefined
+      )
       saveSession(res.code, res.playerId, res.playerName)
       navigate(`/lobby/${res.code}`)
     } catch (error) {
+      if (error instanceof ApiError && error.needsPassword) setNeedsPassword(true)
       setError(errorMessage(error))
     } finally {
       setLoading(false)
@@ -92,8 +115,15 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-canvas flex flex-col items-center justify-center px-4 py-12 relative">
       <div className="absolute top-5 right-5">
-        <ThemeToggle />
+        <SettingsMenu />
       </div>
+
+      {notice && (
+        <div className="mb-6 flex items-center gap-2 text-sm bg-surface border border-edge rounded-xl px-4 py-3 text-ink animate-pop">
+          <Info size={16} weight="bold" className="text-accent shrink-0" />
+          {notice}
+        </div>
+      )}
 
       <div className="mb-10 text-center">
         <div className="flex items-center justify-center gap-3 mb-4">
@@ -198,6 +228,24 @@ export default function Home() {
                     placeholder="ABC123"
                     maxLength={6}
                     className="w-full border-2 border-edge rounded-xl px-4 py-3 text-ink font-mono font-bold text-lg tracking-widest focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+              )}
+
+              {mode === "join" && needsPassword && (
+                <div>
+                  <label className="block text-sm font-medium text-muted mb-2 flex items-center gap-1.5">
+                    <LockSimple size={14} weight="bold" />
+                    Mot de passe du salon
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+                    placeholder="••••••"
+                    maxLength={32}
+                    className="w-full border-2 border-edge rounded-xl px-4 py-3 text-ink font-medium focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
               )}

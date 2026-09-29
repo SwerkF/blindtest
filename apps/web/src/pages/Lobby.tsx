@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useNavigate, Navigate } from "react-router-dom"
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query"
-import { Users, Play, Copy, Check, MusicNotes, ShareNetwork, X, Television, CircleNotch } from "@phosphor-icons/react"
 import {
+  Users,
+  Play,
+  Copy,
+  Check,
+  MusicNotes,
+  ShareNetwork,
+  X,
+  Television,
+  CircleNotch,
+  LockSimple,
+  SignOut,
+} from "@phosphor-icons/react"
+import {
+  ErrorCode,
+  LOBBY_PASSWORD_MAX_LENGTH,
   GameMode,
   GamePhase,
   MAX_ROUND_DURATION,
@@ -15,10 +29,10 @@ import {
 } from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
-import { api, inviteUrl, loadSession, type PlaylistItem } from "@/utils/api"
-import Avatar from "@/components/Avatar"
+import { api, clearSession, inviteUrl, loadSession, type PlaylistItem } from "@/utils/api"
+import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
-import ThemeToggle from "@/components/ThemeToggle"
+import SettingsMenu from "@/components/SettingsMenu"
 
 const DEFAULT_SETTINGS: LobbySettings = {
   mode: GameMode.Classic,
@@ -64,6 +78,9 @@ export default function Lobby() {
   const [editingAvatar, setEditingAvatar] = useState(false)
   /** The host started the game and the server is fetching the tracks. */
   const [preparing, setPreparing] = useState(false)
+  const [access, setAccess] = useState({ hasPassword: false, allowLateJoin: true })
+  /** Host-side draft of the password, committed on blur or Enter. */
+  const [passwordDraft, setPasswordDraft] = useState("")
   /** The server has no settings yet and the host has to publish the initial ones. */
   const [needsInitialSync, setNeedsInitialSync] = useState(false)
   const { profile, setAvatar } = useProfile()
@@ -154,7 +171,16 @@ export default function Lobby() {
           setPreparing(msg.active)
           if (msg.active) setError("")
           break
+        case "lobby:access":
+          setAccess({ hasPassword: msg.hasPassword, allowLateJoin: msg.allowLateJoin })
+          if (msg.password !== undefined) setPasswordDraft(msg.password)
+          break
         case "error":
+          if (msg.code === ErrorCode.RoomNotFound) {
+            clearSession(code!)
+            navigate("/", { replace: true, state: { notice: "Cette partie n'existe pas ou plus." } })
+            break
+          }
           setError(msg.message)
           setPreparing(false)
           break
@@ -232,6 +258,17 @@ export default function Lobby() {
     }
   }
 
+  function commitAccess(password: string, allowLateJoin: boolean) {
+    if (!isHostRef.current) return
+    send({ type: "lobby:access", password, allowLateJoin })
+  }
+
+  function leaveLobby() {
+    send({ type: "leave" })
+    clearSession(code!)
+    navigate("/", { replace: true })
+  }
+
   function saveAvatar(avatarSeed: string) {
     setAvatar(avatarSeed)
     setEditingAvatar(false)
@@ -290,21 +327,31 @@ export default function Lobby() {
                 {copied === "code" ? <Check size={20} /> : <Copy size={20} />}
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void shareInvite()}
-              className="mt-3 flex items-center gap-2 text-sm font-semibold bg-accent text-white px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
-            >
-              {copied === "link" ? <Check size={16} weight="bold" /> : <ShareNetwork size={16} weight="bold" />}
-              {copied === "link" ? "Lien copié !" : "Inviter des amis"}
-            </button>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void shareInvite()}
+                className="flex items-center gap-2 text-sm font-semibold bg-accent text-white px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
+              >
+                {copied === "link" ? <Check size={16} weight="bold" /> : <ShareNetwork size={16} weight="bold" />}
+                {copied === "link" ? "Lien copié !" : "Inviter des amis"}
+              </button>
+              <button
+                type="button"
+                onClick={leaveLobby}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-muted hover:text-red-500 px-3 py-2 rounded-xl transition-colors"
+              >
+                <SignOut size={16} weight="bold" />
+                Quitter
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm">
               <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-muted"}`} />
               <span className="text-muted">{connected ? "Connecté" : "Connexion..."}</span>
             </div>
-            <ThemeToggle />
+            <SettingsMenu />
           </div>
         </div>
 
@@ -473,11 +520,12 @@ export default function Lobby() {
             </div>
             <ul className="flex flex-col gap-2">
               {players.map((p, i) => (
-                <li key={p.id} className={`flex items-center gap-3 ${p.connected ? "" : "opacity-40"}`}>
+                <li key={p.id} className={`flex items-center gap-3 ${p.connected ? "" : "opacity-60"}`}>
                   <span className="text-xs text-muted w-4">{i + 1}</span>
                   <Avatar
                     name={p.avatarSeed || p.name}
                     size={48}
+                    status={p.connected ? PlayerStatus.Online : PlayerStatus.Offline}
                     onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
                   />
                   <span className="font-medium text-ink">{p.name}</span>
@@ -583,6 +631,40 @@ export default function Lobby() {
                   Afficher les paroles au résultat
                 </span>
               </label>
+
+              {/* Accès au salon */}
+              <div className="pt-4 border-t border-edge flex flex-col gap-3">
+                <p className="text-xs text-muted font-medium uppercase tracking-wider flex items-center gap-1.5">
+                  <LockSimple size={13} weight="bold" />
+                  Accès
+                </p>
+                {isHost ? (
+                  <input
+                    type="text"
+                    value={passwordDraft}
+                    onChange={(e) => setPasswordDraft(e.target.value)}
+                    onBlur={() => commitAccess(passwordDraft, access.allowLateJoin)}
+                    onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                    placeholder="Mot de passe (vide = salon ouvert)"
+                    maxLength={LOBBY_PASSWORD_MAX_LENGTH}
+                    className="w-full border border-edge bg-surface rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                  />
+                ) : (
+                  <p className="text-sm text-ink">{access.hasPassword ? "Protégé par mot de passe" : "Salon ouvert"}</p>
+                )}
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={access.allowLateJoin}
+                    disabled={!isHost}
+                    onChange={(e) => commitAccess(passwordDraft, e.target.checked)}
+                    className="w-4 h-4 accent-accent disabled:opacity-60"
+                  />
+                  <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
+                    Autoriser à rejoindre pendant la partie
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
