@@ -12,9 +12,12 @@ import {
   startGame,
   processGuess,
   getEndSummary,
+  setPreparing,
+  appendTracks,
+  finishTrackLoading,
 } from "@/game/engine"
 import { fetchTrackPool, pickRandomTracks } from "@/deezer"
-import { pickAnimeTracks } from "@/anime"
+import { streamAnimeTracks } from "@/anime"
 import { prisma } from "@/db"
 
 export default async function wsRoute(fastify: FastifyInstance) {
@@ -84,22 +87,34 @@ export default async function wsRoute(fastify: FastifyInstance) {
             send({ type: "error", message: "Aucune playlist selectionnee" })
             return
           }
-          const anime = msg.settings.mode === GameMode.Anime
-          const tracks = anime
-            ? await fetchTrackPool(deezerIds)
-                .then((pool) => pickAnimeTracks(pool, msg.settings.trackCount))
-                .catch(() => [])
-            : await pickRandomTracks(deezerIds, msg.settings.trackCount).catch(() => [])
-          if (tracks.length === 0) {
-            send({
-              type: "error",
-              message: anime
-                ? "Aucun opening/ending d'anime reconnu dans ces playlists"
-                : "Aucun titre jouable trouve dans ces playlists",
-            })
+          if (!setPreparing(code, true)) return
+          const settings = msg.settings
+          const fail = (message: string) => {
+            setPreparing(code, false)
+            send({ type: "error", message })
+          }
+
+          if (settings.mode !== GameMode.Anime) {
+            const tracks = await pickRandomTracks(deezerIds, settings.trackCount).catch(() => [])
+            if (tracks.length === 0) return fail("Aucun titre jouable trouve dans ces playlists")
+            if ((await startGame(code, settings, tracks)) === null) setPreparing(code, false)
             return
           }
-          await startGame(code, msg.settings, tracks)
+
+          // Anime mode: start on the first recognised theme, keep matching the rest meanwhile
+          const pool = await fetchTrackPool(deezerIds).catch(() => [])
+          let gameId: number | null = null
+          let started = false
+          await streamAnimeTracks(pool, settings.trackCount, async (tracks) => {
+            if (started) return gameId !== null && appendTracks(code, gameId, tracks)
+            started = true
+            gameId = await startGame(code, settings, tracks, { loadingMore: settings.trackCount > tracks.length })
+            if (gameId === null) setPreparing(code, false)
+            return gameId !== null && settings.trackCount > tracks.length
+          }).catch(() => {})
+          if (started && gameId === null) return
+          if (gameId === null) return fail("Aucun opening/ending d'anime reconnu dans ces playlists")
+          finishTrackLoading(code, gameId)
           break
         }
 
@@ -117,7 +132,6 @@ export default async function wsRoute(fastify: FastifyInstance) {
             scores: result.scores,
             firstBoth: result.firstBoth,
             yearGuessesLeft: result.yearGuessesLeft,
-            themeGuessesLeft: result.themeGuessesLeft,
           }
           const mine: WsServerMessage = {
             ...shared,

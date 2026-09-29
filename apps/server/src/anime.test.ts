@@ -6,9 +6,19 @@ import {
   type LobbySettings,
   type WsServerMessage,
 } from "@blindmusic/shared"
-import { animeNameVariants, buildMatch, pickAnimeTracks, pickSong, type AtSong } from "@/anime"
+import { acronymOf, animeNameVariants, buildMatch, pickSong, streamAnimeTracks, type AtSong } from "@/anime"
 import type { Track } from "@/deezer"
-import { createRoom, addPlayer, startGame, processGuess, registerSocket, removePlayer } from "@/game/engine"
+import {
+  createRoom,
+  addPlayer,
+  animePoints,
+  appendTracks,
+  finishTrackLoading,
+  startGame,
+  processGuess,
+  registerSocket,
+  removePlayer,
+} from "@/game/engine"
 
 // Shaped like AnimeThemes /search?fields[search]=songs&include[song]=animethemes.anime,artists
 const GURENGE: AtSong = {
@@ -87,21 +97,62 @@ test("buildMatch reunit noms, synonymes, theme et pochette", () => {
   })
 })
 
-test("pickAnimeTracks ne garde que les pistes reconnues et prend l'annee de l'anime", async () => {
+test("les abreviations viennent des initiales", () => {
+  expect(acronymOf("Shingeki no Kyojin")).toBe("snk")
+  expect(acronymOf("My Hero Academia")).toBe("mha")
+  expect(acronymOf("Naruto")).toBeNull()
+})
+
+test("buildMatch ajoute les titres AniList (anglais, francais) via la ressource externe", () => {
+  const details = new Map([
+    [10, { ...GURENGE.animethemes![0].anime!, resources: [{ site: "AniList", external_id: 101922 }] }],
+  ])
+  const aniList = new Map([[101922, ["Demon Slayer: Kimetsu no Yaiba", "Les Rôdeurs de la nuit"]]])
+  const match = buildMatch(GURENGE, details, aniList, "LiSA")!
+  expect(match.names).toContain("Demon Slayer")
+  expect(match.names).toContain("Les Rôdeurs de la nuit")
+  expect(match.acronyms).toContain("kny")
+  expect(match.artists).toEqual(["LiSA"])
+})
+
+function mockApis() {
   globalThis.fetch = mock(async (input: string | URL | Request) => {
     const url = new URL(String(input))
+    if (url.hostname === "graphql.anilist.co") {
+      return Response.json({ data: { Page: { media: [{ id: 101922, title: { english: "Demon Slayer" }, synonyms: [] }] } } })
+    }
     if (url.pathname === "/search") {
       const songs = url.searchParams.get("q") === "Gurenge" ? [GURENGE] : []
       return Response.json({ search: { songs } })
     }
-    return Response.json({ anime: [{ ...GURENGE.animethemes![0].anime, animesynonyms: [{ text: "Demon Slayer" }] }] })
+    return Response.json({
+      anime: [{ ...GURENGE.animethemes![0].anime, resources: [{ site: "AniList", external_id: 101922 }] }],
+    })
   }) as unknown as typeof fetch
+}
 
-  const pool = [track(101, "Pas un anime", "Quelqu'un"), track(102, "Gurenge", "LiSA")]
-  const tracks = await pickAnimeTracks(pool, 5)
-  expect(tracks).toHaveLength(1)
-  expect(tracks[0].year).toBe(2019)
-  expect(tracks[0].anime?.names).toContain("Demon Slayer")
+test("streamAnimeTracks livre le premier titre seul puis ne garde que les pistes reconnues", async () => {
+  mockApis()
+  const pool = [
+    track(201, "Pas un anime", "Quelqu'un"),
+    track(202, "Gurenge", "LiSA"),
+    track(203, "Autre chose", "Personne"),
+  ]
+  const batches: Track[][] = []
+  await streamAnimeTracks(pool, 5, (tracks) => {
+    batches.push(tracks)
+    return true
+  })
+  expect(batches).toHaveLength(1)
+  expect(batches[0]).toHaveLength(1)
+  expect(batches[0][0].year).toBe(2019)
+  expect(batches[0][0].anime?.names).toContain("Demon Slayer")
+})
+
+test("les points de l'anime baissent avec le temps", () => {
+  expect(animePoints(0, 30_000)).toBe(20)
+  expect(animePoints(15_000, 30_000)).toBe(13)
+  expect(animePoints(30_000, 30_000)).toBe(5)
 })
 
 const SETTINGS: LobbySettings = {
@@ -129,53 +180,76 @@ async function animeRoom(code: string, players: string[]) {
   createRoom(code, players[0], players[0], players[0], collect)
   for (const p of players.slice(1)) addPlayer(code, p, p, p, collect)
   for (const p of players) registerSocket(code, p, collect)
-  await startGame(code, SETTINGS, [ANIME_TRACK], 0)
+  await startGame(code, SETTINGS, [ANIME_TRACK], { countdownMs: 0 })
   await Bun.sleep(5)
   return { inbox, cleanup: () => players.forEach((p) => removePlayer(code, p)) }
 }
 
-test("mode anime : le titre ou l'artiste ne rapportent rien, l'anime rapporte le combo", async () => {
-  const r = await animeRoom("A1", ["a", "b"])
+test("mode anime : le titre ne rapporte rien, l'anime (nom, synonyme, abreviation) oui", async () => {
+  const r = await animeRoom("A1", ["a", "b", "c"])
 
-  expect(processGuess("A1", "a", "LiSA")?.matched).toBe(GuessMatch.None)
   expect(processGuess("A1", "a", "Gurenge")?.matched).toBe(GuessMatch.None)
 
   const found = processGuess("A1", "a", "kimetsu no yaiba")
   expect(found?.matched).toBe(GuessMatch.Anime)
-  expect(found?.pointsEarned).toBe(20)
+  // Trouve des la premiere seconde : quasi le maximum
+  expect(found?.pointsEarned).toBeGreaterThanOrEqual(19)
   expect(found?.revealedAnime).toBe("Kimetsu no Yaiba")
 
-  // Le synonyme anglais marche aussi, avec la decroissance du combo
-  expect(processGuess("A1", "b", "demon slayer")?.pointsEarned).toBe(18)
+  expect(processGuess("A1", "b", "demon slayer")?.matched).toBe(GuessMatch.Anime)
+  expect(processGuess("A1", "c", "KNY")?.matched).toBe(GuessMatch.Anime)
 
   r.cleanup()
 })
 
-test("mode anime : le numero d'opening est un bonus a essais limites", async () => {
+test("mode anime : l'auteur est un bonus, seul ou avec l'anime", async () => {
   const r = await animeRoom("A2", ["a", "b"])
 
-  const wrong = processGuess("A2", "a", "ED1")
-  expect(wrong?.matched).toBe(GuessMatch.ThemeWrong)
-  expect(wrong?.themeGuessesLeft).toBe(1)
+  const artist = processGuess("A2", "a", "Lisa")
+  expect(artist?.matched).toBe(GuessMatch.Artist)
+  expect(artist?.pointsEarned).toBe(5)
+  expect(processGuess("A2", "a", "lisa")?.pointsEarned).toBe(0)
 
-  const right = processGuess("A2", "a", "opening 1")
-  expect(right?.matched).toBe(GuessMatch.Theme)
-  expect(right?.pointsEarned).toBe(3)
-
-  expect(processGuess("A2", "a", "op1")?.matched).toBe(GuessMatch.ThemeAlreadyFound)
+  expect(processGuess("A2", "b", "Demon Slayer LiSA")?.matched).toBe(GuessMatch.AnimeAndArtist)
 
   r.cleanup()
 })
 
-test("mode anime : la manche continue tant que le bonus d'opening reste jouable", async () => {
+test("mode anime : la manche finit quand tout le monde a l'anime et l'auteur", async () => {
   const r = await animeRoom("A3", ["a"])
 
   processGuess("A3", "a", "Demon Slayer")
   expect(r.inbox.some((m) => m.type === "round:reveal")).toBe(false)
 
-  processGuess("A3", "a", "OP1")
+  processGuess("A3", "a", "LiSA")
   const reveal = r.inbox.find((m) => m.type === "round:reveal")
   expect(reveal?.type === "round:reveal" && reveal.anime?.name).toBe("Kimetsu no Yaiba")
 
   r.cleanup()
 })
+
+test("chargement progressif : la partie attend le titre suivant puis se termine", async () => {
+  const inbox: WsServerMessage[] = []
+  const collect = (msg: WsServerMessage) => inbox.push(msg)
+  createRoom("A4", "a", "a", "a", collect)
+  registerSocket("A4", "a", collect)
+  const gameId = await startGame("A4", { ...SETTINGS, trackCount: 2 }, [ANIME_TRACK], {
+    countdownMs: 0,
+    loadingMore: true,
+  })
+  await Bun.sleep(5)
+  const first = inbox.find((m) => m.type === "round:start")
+  expect(first?.type === "round:start" && first.round.total).toBe(2)
+
+  processGuess("A4", "a", "Demon Slayer LiSA")
+  await Bun.sleep(5100)
+  // Revelation finie mais rien de charge : on attend sans terminer
+  expect(inbox.some((m) => m.type === "game:end")).toBe(false)
+
+  expect(appendTracks("A4", gameId!, [{ ...ANIME_TRACK, id: 2 }])).toBe(false)
+  const second = inbox.filter((m) => m.type === "round:start")
+  expect(second).toHaveLength(2)
+
+  finishTrackLoading("A4", gameId!)
+  removePlayer("A4", "a")
+}, 10_000)

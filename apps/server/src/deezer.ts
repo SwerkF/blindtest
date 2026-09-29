@@ -15,8 +15,12 @@ export interface Track {
 }
 
 export interface AnimeMatch {
-  /** Every accepted answer: canonical names, synonyms and their base titles. */
+  /** Every accepted answer: canonical, English/romaji titles, synonyms and their base titles. */
   names: string[]
+  /** Abbreviations ("snk", "mha"), only accepted as an exact guess. */
+  acronyms: string[]
+  /** Who performs the song: a bonus answer. */
+  artists: string[]
   reveal: AnimeReveal
 }
 

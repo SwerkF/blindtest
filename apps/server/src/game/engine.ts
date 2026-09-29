@@ -8,8 +8,9 @@ import {
   HINT_AT,
   HintKind,
   REVEAL_MS,
-  ThemeType,
-  type AnimeReveal,
+  ANIME_ARTIST_POINTS,
+  ANIME_MAX_POINTS,
+  ANIME_MIN_POINTS,
   type LobbySettings,
   type PlayedTrack,
   type PlayerPublic,
@@ -17,7 +18,7 @@ import {
   type RoundPublic,
   type WsServerMessage,
 } from "@blindmusic/shared"
-import type { Track } from "@/deezer"
+import type { AnimeMatch, Track } from "@/deezer"
 import { fetchTrackLyrics } from "@/lyrics"
 import { normalize, similarity } from "@/game/text"
 
@@ -31,9 +32,6 @@ interface PlayerState {
   hasFoundBoth: boolean
   hasFoundYear: boolean
   yearGuessesLeft: number
-  /** Anime mode: the OP/ED number bonus. */
-  hasFoundTheme: boolean
-  themeGuessesLeft: number
   connected: boolean
   dropTimer: ReturnType<typeof setTimeout> | null
   /** One entry per finished round, in play order. */
@@ -57,6 +55,16 @@ interface Room {
   /** Prefetched during the round so the reveal never waits on the network. */
   roundLyrics: string | null
   hintTimers: ReturnType<typeof setTimeout>[]
+  /** Bumped on every start, so a background track loader never feeds a newer game. */
+  gameId: number
+  /** Tracks are still being fetched in the background (anime mode). */
+  loadingMore: boolean
+  /** How many rounds the host asked for, shown while tracks keep arriving. */
+  expectedTotal: number
+  /** The reveal is over but the next track is not loaded yet. */
+  waitingForTrack: boolean
+  /** Tracks for the first round are being fetched, the game has not started yet. */
+  preparing: boolean
 }
 
 /** Avatar strings carry the seed plus the customisation, see the web avatar codec. */
@@ -79,8 +87,6 @@ function newPlayer(
     hasFoundBoth: false,
     hasFoundYear: false,
     yearGuessesLeft,
-    hasFoundTheme: false,
-    themeGuessesLeft: yearGuessesLeft,
     connected: false,
     dropTimer: null,
     outcomes: [],
@@ -132,6 +138,11 @@ function lobbyUpdate(room: Room): WsServerMessage {
     phase: room.phase,
     hostId: room.hostId,
   }
+}
+
+/** Rounds still loading count towards what the host asked for. */
+function roundTotal(room: Room): number {
+  return room.loadingMore ? Math.max(room.expectedTotal, room.tracks.length) : room.tracks.length
 }
 
 function isAnimeMode(room: Room): boolean {
@@ -196,6 +207,11 @@ export function createRoom(
     firstBothFoundBy: null,
     roundLyrics: null,
     hintTimers: [],
+    gameId: 0,
+    loadingMore: false,
+    expectedTotal: 0,
+    waitingForTrack: false,
+    preparing: false,
   }
   room.players.set(hostId, newPlayer(hostId, hostName, avatarSeed, 0, send))
   rooms.set(code, room)
@@ -291,7 +307,7 @@ export function getCurrentRound(code: string): RoundPublic | null {
   if (!track) return null
   return {
     trackIndex: room.currentRoundIndex + 1,
-    total: room.tracks.length,
+    total: roundTotal(room),
     previewUrl: track.previewUrl,
     startedAt: room.roundStartedAt,
     duration: room.settings.roundDuration * 1000,
@@ -318,18 +334,30 @@ export function updateSettings(code: string, settings: LobbySettings) {
   broadcast(room, lobbyUpdate(room))
 }
 
+export interface StartOptions {
+  countdownMs?: number
+  /** More tracks will come through appendTracks, until finishTrackLoading. */
+  loadingMore?: boolean
+}
+
+/** Returns the id of the started game (for appendTracks), or null if it could not start. */
 export async function startGame(
   code: string,
   settings: LobbySettings,
   tracks: Track[],
-  countdownMs: number = COUNTDOWN_MS
-): Promise<boolean> {
+  { countdownMs = COUNTDOWN_MS, loadingMore = false }: StartOptions = {}
+): Promise<number | null> {
   const room = rooms.get(code)
   // A finished game can be replayed straight from the lobby on the same code
-  if (!room || (room.phase !== GamePhase.Lobby && room.phase !== GamePhase.End)) return false
-  if (tracks.length === 0) return false
+  if (!room || (room.phase !== GamePhase.Lobby && room.phase !== GamePhase.End)) return null
+  if (tracks.length === 0) return null
   room.settings = settings
   room.tracks = tracks
+  room.gameId++
+  room.loadingMore = loadingMore
+  room.expectedTotal = settings.trackCount
+  room.waitingForTrack = false
+  room.preparing = false
   room.currentRoundIndex = 0
   room.roundStartedAt = 0
   for (const p of room.players.values()) {
@@ -342,7 +370,48 @@ export async function startGame(
   room.startsAt = Date.now() + countdownMs
   broadcast(room, { type: "game:start", startsAt: room.startsAt })
   room.roundTimer = setTimeout(() => startRound(room), countdownMs)
+  return room.gameId
+}
+
+/** Lobby-wide "loading" state while the host's start request fetches tracks. */
+export function setPreparing(code: string, active: boolean): boolean {
+  const room = rooms.get(code)
+  if (!room) return false
+  if (active && room.preparing) return false
+  room.preparing = active
+  broadcast(room, { type: "game:preparing", active })
   return true
+}
+
+/** Feeds tracks loaded in the background; false once that game is over or replaced. */
+export function appendTracks(code: string, gameId: number, tracks: Track[]): boolean {
+  const room = rooms.get(code)
+  if (!room || room.gameId !== gameId || !room.loadingMore) return false
+  room.tracks.push(...tracks.slice(0, Math.max(0, room.expectedTotal - room.tracks.length)))
+  if (room.waitingForTrack) nextRound(room)
+  return room.tracks.length < room.expectedTotal
+}
+
+/** The background loader is done: the game ends with the tracks it got. */
+export function finishTrackLoading(code: string, gameId: number) {
+  const room = rooms.get(code)
+  if (!room || room.gameId !== gameId || !room.loadingMore) return
+  room.loadingMore = false
+  if (room.waitingForTrack) nextRound(room)
+}
+
+function nextRound(room: Room) {
+  room.waitingForTrack = false
+  if (room.currentRoundIndex < room.tracks.length) {
+    startRound(room)
+  } else if (room.loadingMore) {
+    // Picked up again by appendTracks or finishTrackLoading
+    room.waitingForTrack = true
+  } else {
+    room.phase = GamePhase.End
+    // The room stays alive so everyone can replay on the same code
+    broadcast(room, endMessage(room))
+  }
 }
 
 function startRound(room: Room) {
@@ -356,8 +425,6 @@ function startRound(room: Room) {
     p.hasFoundBoth = false
     p.hasFoundYear = false
     p.yearGuessesLeft = s.yearGuessAttempts
-    p.hasFoundTheme = false
-    p.themeGuessesLeft = s.yearGuessAttempts
   }
   const track = room.tracks[room.currentRoundIndex]
   room.roundStartedAt = Date.now()
@@ -375,7 +442,7 @@ function startRound(room: Room) {
     type: "round:start",
     round: {
       trackIndex: room.currentRoundIndex + 1,
-      total: room.tracks.length,
+      total: roundTotal(room),
       previewUrl: track.previewUrl,
       startedAt: room.roundStartedAt,
       duration: s.roundDuration * 1000,
@@ -385,9 +452,9 @@ function startRound(room: Room) {
 
   clearHintTimers(room)
   const durationMs = s.roundDuration * 1000
-  // Anime mode: the early hint is when the anime aired, the late one masks its name
+  // Anime mode: no early hint (it would give the year away), the late one masks the anime
   const anime = isAnimeMode(room) ? track.anime : undefined
-  const earlyHint = anime ? airedHint(anime.reveal) : buildHint(track.artist)
+  const earlyHint = anime ? null : buildHint(track.artist)
   const lateHint = buildHint(anime ? anime.reveal.name : track.title)
   if (s.showArtistHint && earlyHint) {
     room.hintTimers.push(
@@ -408,18 +475,6 @@ function startRound(room: Room) {
 
   // Found markers were just cleared, so refresh what clients display
   broadcastLobby(room.code)
-}
-
-const SEASON_LABEL: Record<string, string> = {
-  winter: "Hiver",
-  spring: "Printemps",
-  summer: "Été",
-  fall: "Automne",
-}
-
-function airedHint(anime: AnimeReveal): string {
-  const season = anime.season ? SEASON_LABEL[anime.season.toLowerCase()] : undefined
-  return [season, anime.year].filter(Boolean).join(" ")
 }
 
 function outcomes(room: Room): Record<string, RoundOutcome[]> {
@@ -456,11 +511,10 @@ function endRound(room: Room) {
       artist: p.hasFoundArtist,
       title: p.hasFoundTitle,
       year: p.hasFoundYear,
-      theme: p.hasFoundTheme,
     }
   }
 
-  const isLast = room.currentRoundIndex + 1 >= room.tracks.length
+  const isLast = !room.loadingMore && room.currentRoundIndex + 1 >= room.tracks.length
   broadcast(room, {
     type: "round:reveal",
     artist: track.artist,
@@ -476,15 +530,7 @@ function endRound(room: Room) {
   })
 
   room.currentRoundIndex++
-  room.roundTimer = setTimeout(() => {
-    if (room.currentRoundIndex >= room.tracks.length) {
-      room.phase = GamePhase.End
-      // The room stays alive so everyone can replay on the same code
-      broadcast(room, endMessage(room))
-    } else {
-      startRound(room)
-    }
-  }, REVEAL_MS)
+  room.roundTimer = setTimeout(() => nextRound(room), REVEAL_MS)
 }
 
 function endMessage(room: Room): WsServerMessage {
@@ -513,6 +559,10 @@ export function restartToLobby(code: string) {
   room.roundTimer = null
   room.phase = GamePhase.Lobby
   room.tracks = []
+  // Detaches any background loader still feeding the previous game
+  room.gameId++
+  room.loadingMore = false
+  room.waitingForTrack = false
   room.currentRoundIndex = 0
   room.roundStartedAt = 0
   room.startsAt = 0
@@ -526,7 +576,6 @@ export function restartToLobby(code: string) {
     p.hasFoundTitle = false
     p.hasFoundBoth = false
     p.hasFoundYear = false
-    p.hasFoundTheme = false
   }
   broadcastLobby(code)
 }
@@ -535,9 +584,8 @@ export function restartToLobby(code: string) {
 function endRoundIfAllFound(room: Room) {
   const active = [...room.players.values()].filter((p) => p.connected)
   if (active.length === 0) return
-  // Anime mode leaves room for the OP/ED number bonus once the anime is found
-  const done = (p: PlayerState) =>
-    p.hasFoundBoth && (!isAnimeMode(room) || p.hasFoundTheme || p.themeGuessesLeft <= 0)
+  // Anime mode: the anime alone sets hasFoundBoth, the round waits for the singer bonus too
+  const done = (p: PlayerState) => p.hasFoundBoth && (!isAnimeMode(room) || p.hasFoundArtist)
   if (active.every(done)) endRound(room)
 }
 
@@ -546,7 +594,6 @@ export interface GuessResult {
   pointsEarned: number
   firstBoth: boolean
   yearGuessesLeft: number
-  themeGuessesLeft: number
   scores: Record<string, number>
   revealedArtist?: string
   revealedTitle?: string
@@ -558,7 +605,6 @@ const TITLE_POINTS = 5
 const COMBO_POINTS = 20
 const COMBO_DECAY = 2
 const YEAR_POINTS = 2
-const THEME_POINTS = 3
 
 /**
  * Single free-text entry: a 4-digit number is read as a year attempt, anything
@@ -626,7 +672,6 @@ export function processGuess(code: string, playerId: string, text: string): Gues
     pointsEarned,
     firstBoth,
     yearGuessesLeft: player.yearGuessesLeft,
-    themeGuessesLeft: player.themeGuessesLeft,
     scores: scores(room),
     revealedArtist: firstBoth ? track.artist : undefined,
     revealedTitle: firstBoth ? track.title : undefined,
@@ -639,7 +684,6 @@ export function processGuess(code: string, playerId: string, text: string): Gues
 function guessYear(room: Room, player: PlayerState, track: Track, year: number): GuessResult {
   const base = {
     firstBoth: false,
-    themeGuessesLeft: player.themeGuessesLeft,
     revealedArtist: undefined,
     revealedTitle: undefined,
   }
@@ -682,97 +726,71 @@ function guessYear(room: Room, player: PlayerState, track: Track, year: number):
 }
 
 
-/** "op2", "opening 2", "ED", "ending #1"... */
-const THEME_GUESS = /^(op|opening|ed|ending)\s*(?:n°|no\.?|#)?\s*(\d{1,2})?$/i
+/** Anime mode: the sooner the anime is found, the more it is worth. */
+export function animePoints(elapsedMs: number, durationMs: number): number {
+  const left = Math.max(0, Math.min(1, 1 - elapsedMs / durationMs))
+  return Math.round(ANIME_MIN_POINTS + (ANIME_MAX_POINTS - ANIME_MIN_POINTS) * left)
+}
+
+function matchesAnime(guess: string, anime: AnimeMatch, maxErr: number): boolean {
+  const compact = guess.replace(/\s/g, "")
+  // Abbreviations are too short for fuzzy matching: exact only
+  if (anime.acronyms.includes(compact)) return true
+  return anime.names.some((name) => isMatch(guess, name, maxErr))
+}
 
 /**
- * Anime mode: the answer is the anime, whatever the song or singer. A theme
- * number ("OP2") is a limited-try bonus, and the year a regular bonus.
+ * Anime mode: the answer is the anime, worth more the faster it is found.
+ * Naming the singer is a bonus, and a 4-digit number is a year attempt.
  */
 function guessAnime(room: Room, player: PlayerState, track: Track, raw: string): GuessResult {
   const anime = track.anime!
-  const themeGuess = raw.match(THEME_GUESS)
-  if (themeGuess) {
-    const type = themeGuess[1].toLowerCase().startsWith("o") ? ThemeType.Opening : ThemeType.Ending
-    return guessTheme(room, player, anime.reveal, type, themeGuess[2] ? Number(themeGuess[2]) : null)
-  }
   if (/^\d{4}$/.test(raw)) {
     return guessYear(room, player, track, Number.parseInt(raw, 10))
   }
 
   const maxErr = room.settings!.maxErrorPercent
   const guess = normalize(raw)
-  const base = {
-    yearGuessesLeft: player.yearGuessesLeft,
-    themeGuessesLeft: player.themeGuessesLeft,
-  }
+  const animeMatch = !player.hasFoundBoth && matchesAnime(guess, anime, maxErr)
+  const artistMatch = !player.hasFoundArtist && anime.artists.some((a) => isMatch(guess, a, maxErr))
 
-  if (player.hasFoundBoth) {
-    return { ...base, matched: GuessMatch.None, pointsEarned: 0, firstBoth: false, scores: scores(room) }
-  }
-
-  if (anime.names.some((name) => isMatch(guess, name, maxErr))) {
-    // Finding the anime is the whole round: it fills both found markers
-    player.hasFoundArtist = true
+  let pointsEarned = 0
+  let firstBoth = false
+  if (animeMatch) {
+    // hasFoundBoth carries "found the answer" so the shared round logic keeps working
     player.hasFoundTitle = true
     player.hasFoundBoth = true
-    const pointsEarned = Math.max(0, COMBO_POINTS - room.comboFoundCount * COMBO_DECAY)
-    room.comboFoundCount++
-    player.score += pointsEarned
-    const firstBoth = !room.firstBothFoundBy
-    if (firstBoth) room.firstBothFoundBy = player.id
-    const result: GuessResult = {
-      ...base,
-      matched: GuessMatch.Anime,
-      pointsEarned,
-      firstBoth,
-      scores: scores(room),
-      revealedAnime: anime.reveal.name,
+    pointsEarned += animePoints(Date.now() - room.roundStartedAt, room.settings!.roundDuration * 1000)
+    if (!room.firstBothFoundBy) {
+      room.firstBothFoundBy = player.id
+      firstBoth = true
     }
-    endRoundIfAllFound(room)
-    return result
   }
+  if (artistMatch) {
+    player.hasFoundArtist = true
+    pointsEarned += ANIME_ARTIST_POINTS
+  }
+  player.score += pointsEarned
 
-  const close = anime.names.some((name) => isClose(guess, name, maxErr))
-  return {
-    ...base,
-    matched: close ? GuessMatch.Close : GuessMatch.None,
-    pointsEarned: 0,
-    firstBoth: false,
-    scores: scores(room),
-  }
-}
+  let matched: GuessMatch
+  if (animeMatch && artistMatch) matched = GuessMatch.AnimeAndArtist
+  else if (animeMatch) matched = GuessMatch.Anime
+  else if (artistMatch) matched = GuessMatch.Artist
+  else if (
+    (!player.hasFoundBoth && anime.names.some((name) => isClose(guess, name, maxErr))) ||
+    (!player.hasFoundArtist && anime.artists.some((a) => isClose(guess, a, maxErr)))
+  ) {
+    matched = GuessMatch.Close
+  } else matched = GuessMatch.None
 
-function guessTheme(
-  room: Room,
-  player: PlayerState,
-  anime: AnimeReveal,
-  type: ThemeType,
-  sequence: number | null
-): GuessResult {
-  const base = { firstBoth: false, yearGuessesLeft: player.yearGuessesLeft, scores: scores(room) }
-  if (player.hasFoundTheme) {
-    return { ...base, matched: GuessMatch.ThemeAlreadyFound, pointsEarned: 0, themeGuessesLeft: player.themeGuessesLeft }
-  }
-  if (player.themeGuessesLeft <= 0) {
-    return { ...base, matched: GuessMatch.ThemeExhausted, pointsEarned: 0, themeGuessesLeft: 0 }
-  }
-
-  player.themeGuessesLeft--
-  // An unnumbered theme is the anime's only one of its kind, so "OP" and "OP1" both fit it
-  const correct = anime.themes.some(
-    (t) => t.type === type && (t.sequence === sequence || (t.sequence === null && (sequence ?? 1) === 1))
-  )
-  if (correct) {
-    player.hasFoundTheme = true
-    player.score += THEME_POINTS
-  }
   const result: GuessResult = {
-    ...base,
-    matched: correct ? GuessMatch.Theme : GuessMatch.ThemeWrong,
-    pointsEarned: correct ? THEME_POINTS : 0,
-    themeGuessesLeft: player.themeGuessesLeft,
+    matched,
+    pointsEarned,
+    firstBoth,
+    yearGuessesLeft: player.yearGuessesLeft,
     scores: scores(room),
+    revealedAnime: animeMatch ? anime.reveal.name : undefined,
+    revealedArtist: artistMatch ? track.artist : undefined,
   }
   endRoundIfAllFound(room)
   return result
