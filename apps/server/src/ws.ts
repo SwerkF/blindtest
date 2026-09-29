@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import { GamePhase, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
+import { GameMode, GamePhase, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
 import {
   rooms,
   registerSocket,
@@ -13,7 +13,8 @@ import {
   processGuess,
   getEndSummary,
 } from "@/game/engine"
-import { pickRandomTracks } from "@/deezer"
+import { fetchTrackPool, pickRandomTracks } from "@/deezer"
+import { pickAnimeTracks } from "@/anime"
 import { prisma } from "@/db"
 
 export default async function wsRoute(fastify: FastifyInstance) {
@@ -83,9 +84,19 @@ export default async function wsRoute(fastify: FastifyInstance) {
             send({ type: "error", message: "Aucune playlist selectionnee" })
             return
           }
-          const tracks = await pickRandomTracks(deezerIds, msg.settings.trackCount).catch(() => [])
+          const anime = msg.settings.mode === GameMode.Anime
+          const tracks = anime
+            ? await fetchTrackPool(deezerIds)
+                .then((pool) => pickAnimeTracks(pool, msg.settings.trackCount))
+                .catch(() => [])
+            : await pickRandomTracks(deezerIds, msg.settings.trackCount).catch(() => [])
           if (tracks.length === 0) {
-            send({ type: "error", message: "Aucun titre jouable trouve dans ces playlists" })
+            send({
+              type: "error",
+              message: anime
+                ? "Aucun opening/ending d'anime reconnu dans ces playlists"
+                : "Aucun titre jouable trouve dans ces playlists",
+            })
             return
           }
           await startGame(code, msg.settings, tracks)
@@ -106,12 +117,14 @@ export default async function wsRoute(fastify: FastifyInstance) {
             scores: result.scores,
             firstBoth: result.firstBoth,
             yearGuessesLeft: result.yearGuessesLeft,
+            themeGuessesLeft: result.themeGuessesLeft,
           }
           const mine: WsServerMessage = {
             ...shared,
             text: msg.text,
             revealedArtist: result.revealedArtist,
             revealedTitle: result.revealedTitle,
+            revealedAnime: result.revealedAnime,
           }
           for (const p of room.players.values()) {
             try {

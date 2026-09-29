@@ -7,6 +7,7 @@ interface Curated {
   slug: string
   deezerPlaylistId: string
   description: string
+  category?: "classic" | "anime"
 }
 
 interface DeezerPlaylist {
@@ -57,6 +58,28 @@ const curated: Curated[] = [
     deezerPlaylistId: "1282483245",
     description: "La pop internationale qui cartonne",
   },
+  // Anime mode: tracks are matched against AnimeThemes, the rest is skipped
+  {
+    name: "Anime Openings & Endings",
+    slug: "anime-openings-endings",
+    deezerPlaylistId: "7270719404",
+    description: "Des milliers d'openings, endings et inserts d'animés",
+    category: "anime",
+  },
+  {
+    name: "Best Anime Openings",
+    slug: "best-anime-openings",
+    deezerPlaylistId: "7490833544",
+    description: "La sélection des meilleurs génériques d'animés",
+    category: "anime",
+  },
+  {
+    name: "Animés du moment",
+    slug: "anime-currently-airing",
+    deezerPlaylistId: "8193938122",
+    description: "Openings et endings des animés en cours de diffusion",
+    category: "anime",
+  },
 ]
 
 for (const p of curated) {
@@ -74,7 +97,7 @@ for (const p of curated) {
     console.warn(`Deezer metadata unavailable for ${p.slug}`)
   }
 
-  const data = { ...p, trackCount, coverUrl }
+  const data = { ...p, category: p.category ?? "classic", trackCount, coverUrl }
   await prisma.playlist.upsert({ where: { slug: p.slug }, update: data, create: data })
   console.log(`  ${p.name} — ${trackCount} titres`)
 }

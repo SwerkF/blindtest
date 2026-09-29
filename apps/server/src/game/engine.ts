@@ -2,11 +2,14 @@ import {
   ARTIST_HINT_AT,
   COUNTDOWN_MS,
   DISCONNECT_GRACE_MS,
+  GameMode,
   GamePhase,
   GuessMatch,
   HINT_AT,
   HintKind,
   REVEAL_MS,
+  ThemeType,
+  type AnimeReveal,
   type LobbySettings,
   type PlayedTrack,
   type PlayerPublic,
@@ -16,6 +19,7 @@ import {
 } from "@blindmusic/shared"
 import type { Track } from "@/deezer"
 import { fetchTrackLyrics } from "@/lyrics"
+import { normalize, similarity } from "@/game/text"
 
 interface PlayerState {
   id: string
@@ -27,6 +31,9 @@ interface PlayerState {
   hasFoundBoth: boolean
   hasFoundYear: boolean
   yearGuessesLeft: number
+  /** Anime mode: the OP/ED number bonus. */
+  hasFoundTheme: boolean
+  themeGuessesLeft: number
   connected: boolean
   dropTimer: ReturnType<typeof setTimeout> | null
   /** One entry per finished round, in play order. */
@@ -72,6 +79,8 @@ function newPlayer(
     hasFoundBoth: false,
     hasFoundYear: false,
     yearGuessesLeft,
+    hasFoundTheme: false,
+    themeGuessesLeft: yearGuessesLeft,
     connected: false,
     dropTimer: null,
     outcomes: [],
@@ -125,41 +134,13 @@ function lobbyUpdate(room: Room): WsServerMessage {
   }
 }
 
+function isAnimeMode(room: Room): boolean {
+  return room.settings?.mode === GameMode.Anime
+}
+
 function clearHintTimers(room: Room) {
   for (const timer of room.hintTimers) clearTimeout(timer)
   room.hintTimers = []
-}
-
-// ponytail: O(n*m) Levenshtein, fine for song name lengths
-function levenshtein(a: string, b: string): number {
-  const m = a.length
-  const n = b.length
-  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
-  )
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] =
-        a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
-  return dp[m][n]
-}
-
-/** Lowercase, strip accents, drop punctuation and bracketed extras. */
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[([{][^)\]}]*[)\]}]/g, " ")
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim()
-}
-
-function similarity(a: string, b: string): number {
-  if (a === b) return 100
-  if (!a || !b) return 0
-  return Math.round((1 - levenshtein(a, b) / Math.max(a.length, b.length)) * 100)
 }
 
 /**
@@ -375,6 +356,8 @@ function startRound(room: Room) {
     p.hasFoundBoth = false
     p.hasFoundYear = false
     p.yearGuessesLeft = s.yearGuessAttempts
+    p.hasFoundTheme = false
+    p.themeGuessesLeft = s.yearGuessAttempts
   }
   const track = room.tracks[room.currentRoundIndex]
   room.roundStartedAt = Date.now()
@@ -402,10 +385,14 @@ function startRound(room: Room) {
 
   clearHintTimers(room)
   const durationMs = s.roundDuration * 1000
-  if (s.showArtistHint) {
+  // Anime mode: the early hint is when the anime aired, the late one masks its name
+  const anime = isAnimeMode(room) ? track.anime : undefined
+  const earlyHint = anime ? airedHint(anime.reveal) : buildHint(track.artist)
+  const lateHint = buildHint(anime ? anime.reveal.name : track.title)
+  if (s.showArtistHint && earlyHint) {
     room.hintTimers.push(
       setTimeout(
-        () => broadcast(room, { type: "round:hint", kind: HintKind.Artist, hint: buildHint(track.artist) }),
+        () => broadcast(room, { type: "round:hint", kind: HintKind.Artist, hint: earlyHint }),
         durationMs * ARTIST_HINT_AT
       )
     )
@@ -413,7 +400,7 @@ function startRound(room: Room) {
   if (s.showHint) {
     room.hintTimers.push(
       setTimeout(
-        () => broadcast(room, { type: "round:hint", kind: HintKind.Title, hint: buildHint(track.title) }),
+        () => broadcast(room, { type: "round:hint", kind: HintKind.Title, hint: lateHint }),
         durationMs * HINT_AT
       )
     )
@@ -421,6 +408,18 @@ function startRound(room: Room) {
 
   // Found markers were just cleared, so refresh what clients display
   broadcastLobby(room.code)
+}
+
+const SEASON_LABEL: Record<string, string> = {
+  winter: "Hiver",
+  spring: "Printemps",
+  summer: "Été",
+  fall: "Automne",
+}
+
+function airedHint(anime: AnimeReveal): string {
+  const season = anime.season ? SEASON_LABEL[anime.season.toLowerCase()] : undefined
+  return [season, anime.year].filter(Boolean).join(" ")
 }
 
 function outcomes(room: Room): Record<string, RoundOutcome[]> {
@@ -435,6 +434,7 @@ function playedTracks(room: Room): PlayedTrack[] {
     artist: t.artist,
     year: t.year,
     coverUrl: t.coverUrl,
+    anime: t.anime?.reveal,
   }))
 }
 
@@ -456,6 +456,7 @@ function endRound(room: Room) {
       artist: p.hasFoundArtist,
       title: p.hasFoundTitle,
       year: p.hasFoundYear,
+      theme: p.hasFoundTheme,
     }
   }
 
@@ -467,6 +468,7 @@ function endRound(room: Room) {
     year: track.year,
     coverUrl: track.coverUrl,
     lyrics: room.settings?.showLyrics ? room.roundLyrics : null,
+    anime: isAnimeMode(room) ? (track.anime?.reveal ?? null) : null,
     scores: scores(room),
     outcomes: outcomes(room),
     nextAt: Date.now() + REVEAL_MS,
@@ -524,6 +526,7 @@ export function restartToLobby(code: string) {
     p.hasFoundTitle = false
     p.hasFoundBoth = false
     p.hasFoundYear = false
+    p.hasFoundTheme = false
   }
   broadcastLobby(code)
 }
@@ -532,7 +535,10 @@ export function restartToLobby(code: string) {
 function endRoundIfAllFound(room: Room) {
   const active = [...room.players.values()].filter((p) => p.connected)
   if (active.length === 0) return
-  if (active.every((p) => p.hasFoundBoth)) endRound(room)
+  // Anime mode leaves room for the OP/ED number bonus once the anime is found
+  const done = (p: PlayerState) =>
+    p.hasFoundBoth && (!isAnimeMode(room) || p.hasFoundTheme || p.themeGuessesLeft <= 0)
+  if (active.every(done)) endRound(room)
 }
 
 export interface GuessResult {
@@ -540,9 +546,11 @@ export interface GuessResult {
   pointsEarned: number
   firstBoth: boolean
   yearGuessesLeft: number
+  themeGuessesLeft: number
   scores: Record<string, number>
   revealedArtist?: string
   revealedTitle?: string
+  revealedAnime?: string
 }
 
 const ARTIST_POINTS = 5
@@ -550,6 +558,7 @@ const TITLE_POINTS = 5
 const COMBO_POINTS = 20
 const COMBO_DECAY = 2
 const YEAR_POINTS = 2
+const THEME_POINTS = 3
 
 /**
  * Single free-text entry: a 4-digit number is read as a year attempt, anything
@@ -564,6 +573,8 @@ export function processGuess(code: string, playerId: string, text: string): Gues
   if (!raw) return null
 
   const track = room.tracks[room.currentRoundIndex]
+
+  if (isAnimeMode(room) && track.anime) return guessAnime(room, player, track, raw)
 
   if (/^\d{4}$/.test(raw)) {
     return guessYear(room, player, track, Number.parseInt(raw, 10))
@@ -615,6 +626,7 @@ export function processGuess(code: string, playerId: string, text: string): Gues
     pointsEarned,
     firstBoth,
     yearGuessesLeft: player.yearGuessesLeft,
+    themeGuessesLeft: player.themeGuessesLeft,
     scores: scores(room),
     revealedArtist: firstBoth ? track.artist : undefined,
     revealedTitle: firstBoth ? track.title : undefined,
@@ -627,6 +639,7 @@ export function processGuess(code: string, playerId: string, text: string): Gues
 function guessYear(room: Room, player: PlayerState, track: Track, year: number): GuessResult {
   const base = {
     firstBoth: false,
+    themeGuessesLeft: player.themeGuessesLeft,
     revealedArtist: undefined,
     revealedTitle: undefined,
   }
@@ -668,3 +681,99 @@ function guessYear(room: Room, player: PlayerState, track: Track, year: number):
   }
 }
 
+
+/** "op2", "opening 2", "ED", "ending #1"... */
+const THEME_GUESS = /^(op|opening|ed|ending)\s*(?:n°|no\.?|#)?\s*(\d{1,2})?$/i
+
+/**
+ * Anime mode: the answer is the anime, whatever the song or singer. A theme
+ * number ("OP2") is a limited-try bonus, and the year a regular bonus.
+ */
+function guessAnime(room: Room, player: PlayerState, track: Track, raw: string): GuessResult {
+  const anime = track.anime!
+  const themeGuess = raw.match(THEME_GUESS)
+  if (themeGuess) {
+    const type = themeGuess[1].toLowerCase().startsWith("o") ? ThemeType.Opening : ThemeType.Ending
+    return guessTheme(room, player, anime.reveal, type, themeGuess[2] ? Number(themeGuess[2]) : null)
+  }
+  if (/^\d{4}$/.test(raw)) {
+    return guessYear(room, player, track, Number.parseInt(raw, 10))
+  }
+
+  const maxErr = room.settings!.maxErrorPercent
+  const guess = normalize(raw)
+  const base = {
+    yearGuessesLeft: player.yearGuessesLeft,
+    themeGuessesLeft: player.themeGuessesLeft,
+  }
+
+  if (player.hasFoundBoth) {
+    return { ...base, matched: GuessMatch.None, pointsEarned: 0, firstBoth: false, scores: scores(room) }
+  }
+
+  if (anime.names.some((name) => isMatch(guess, name, maxErr))) {
+    // Finding the anime is the whole round: it fills both found markers
+    player.hasFoundArtist = true
+    player.hasFoundTitle = true
+    player.hasFoundBoth = true
+    const pointsEarned = Math.max(0, COMBO_POINTS - room.comboFoundCount * COMBO_DECAY)
+    room.comboFoundCount++
+    player.score += pointsEarned
+    const firstBoth = !room.firstBothFoundBy
+    if (firstBoth) room.firstBothFoundBy = player.id
+    const result: GuessResult = {
+      ...base,
+      matched: GuessMatch.Anime,
+      pointsEarned,
+      firstBoth,
+      scores: scores(room),
+      revealedAnime: anime.reveal.name,
+    }
+    endRoundIfAllFound(room)
+    return result
+  }
+
+  const close = anime.names.some((name) => isClose(guess, name, maxErr))
+  return {
+    ...base,
+    matched: close ? GuessMatch.Close : GuessMatch.None,
+    pointsEarned: 0,
+    firstBoth: false,
+    scores: scores(room),
+  }
+}
+
+function guessTheme(
+  room: Room,
+  player: PlayerState,
+  anime: AnimeReveal,
+  type: ThemeType,
+  sequence: number | null
+): GuessResult {
+  const base = { firstBoth: false, yearGuessesLeft: player.yearGuessesLeft, scores: scores(room) }
+  if (player.hasFoundTheme) {
+    return { ...base, matched: GuessMatch.ThemeAlreadyFound, pointsEarned: 0, themeGuessesLeft: player.themeGuessesLeft }
+  }
+  if (player.themeGuessesLeft <= 0) {
+    return { ...base, matched: GuessMatch.ThemeExhausted, pointsEarned: 0, themeGuessesLeft: 0 }
+  }
+
+  player.themeGuessesLeft--
+  // An unnumbered theme is the anime's only one of its kind, so "OP" and "OP1" both fit it
+  const correct = anime.themes.some(
+    (t) => t.type === type && (t.sequence === sequence || (t.sequence === null && (sequence ?? 1) === 1))
+  )
+  if (correct) {
+    player.hasFoundTheme = true
+    player.score += THEME_POINTS
+  }
+  const result: GuessResult = {
+    ...base,
+    matched: correct ? GuessMatch.Theme : GuessMatch.ThemeWrong,
+    pointsEarned: correct ? THEME_POINTS : 0,
+    themeGuessesLeft: player.themeGuessesLeft,
+    scores: scores(room),
+  }
+  endRoundIfAllFound(room)
+  return result
+}

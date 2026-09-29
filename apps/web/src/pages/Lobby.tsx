@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useNavigate, Navigate } from "react-router-dom"
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query"
-import { Users, Play, Copy, Check, MusicNotes, ShareNetwork, X } from "@phosphor-icons/react"
+import { Users, Play, Copy, Check, MusicNotes, ShareNetwork, X, Television } from "@phosphor-icons/react"
 import {
+  GameMode,
   GamePhase,
   MAX_ROUND_DURATION,
   MAX_TRACK_COUNT,
@@ -20,6 +21,7 @@ import AvatarEditor from "@/components/AvatarEditor"
 import ThemeToggle from "@/components/ThemeToggle"
 
 const DEFAULT_SETTINGS: LobbySettings = {
+  mode: GameMode.Classic,
   playlistIds: [],
   customDeezerPlaylistIds: [],
   trackCount: 10,
@@ -35,6 +37,7 @@ function normalizeSettings(settings: LobbySettings): LobbySettings {
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
+    mode: settings.mode ?? GameMode.Classic,
     playlistIds: settings.playlistIds ?? [],
     customDeezerPlaylistIds: settings.customDeezerPlaylistIds ?? [],
   }
@@ -71,10 +74,16 @@ export default function Lobby() {
   /** Once the host has synced, their local settings win over echoes of older updates. */
   const hostSyncedRef = useRef(false)
 
-  const { data: playlists } = useQuery<PlaylistItem[]>({
+  const { data: allPlaylists } = useQuery<PlaylistItem[]>({
     queryKey: ["playlists"],
     queryFn: api.playlists,
   })
+  const isAnime = settings.mode === GameMode.Anime
+  // Each mode only offers the curated playlists made for it
+  const playlists = useMemo(
+    () => allPlaylists?.filter((p) => (p.category ?? GameMode.Classic) === settings.mode),
+    [allPlaylists, settings.mode]
+  )
 
   // One query per playlist, so adding one never refetches (nor blanks) the others
   const customQueries = useQueries({
@@ -156,6 +165,16 @@ export default function Lobby() {
     const empty = !current.playlistIds.length && !current.customDeezerPlaylistIds.length
     commitSettings(empty && playlists.length ? { ...current, playlistIds: [playlists[0].id] } : current)
   }, [needsInitialSync, playlists, isHost])
+
+  function switchMode(mode: GameMode) {
+    if (!isHost) return
+    const current = settingsRef.current
+    if (current.mode === mode) return
+    const inMode = allPlaylists?.filter((p) => (p.category ?? GameMode.Classic) === mode) ?? []
+    const kept = current.playlistIds.filter((id) => inMode.some((p) => p.id === id))
+    const needsOne = kept.length === 0 && current.customDeezerPlaylistIds.length === 0 && inMode.length > 0
+    commitSettings({ ...current, mode, playlistIds: needsOne ? [inMode[0].id] : kept })
+  }
 
   function playlistCount() {
     return settings.playlistIds.length + settings.customDeezerPlaylistIds.length
@@ -281,6 +300,53 @@ export default function Lobby() {
             <ThemeToggle />
           </div>
         </div>
+
+        {/* Mode de jeu */}
+        <section className="mb-6">
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              {
+                mode: GameMode.Classic,
+                icon: <MusicNotes size={20} weight="bold" />,
+                title: "Classique",
+                text: "Trouve l'artiste et le titre",
+              },
+              {
+                mode: GameMode.Anime,
+                icon: <Television size={20} weight="bold" />,
+                title: "Animé",
+                text: "Trouve l'animé de l'opening / ending",
+              },
+            ].map((option) => {
+              const active = settings.mode === option.mode
+              return (
+                <button
+                  key={option.mode}
+                  type="button"
+                  onClick={() => switchMode(option.mode)}
+                  disabled={!isHost}
+                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all disabled:cursor-default ${
+                    active
+                      ? "border-accent bg-accent/5 text-accent"
+                      : "border-edge bg-surface text-muted hover:border-muted disabled:hover:border-edge"
+                  }`}
+                >
+                  {option.icon}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink text-sm">{option.title}</p>
+                    <p className="text-xs text-muted truncate">{option.text}</p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          {isAnime && (
+            <p className="mt-2 text-xs text-muted">
+              Seuls les titres reconnus comme opening ou ending sur AnimeThemes sont joués. Bonus : tape « OP2 »
+              ou « ED1 » pour le numéro du générique.
+            </p>
+          )}
+        </section>
 
         {/* Playlists */}
         <section className="mb-6">
@@ -459,7 +525,7 @@ export default function Lobby() {
                 onChange={(v) => updateSetting("maxErrorPercent", v)}
               />
               <Setting
-                label="Essais année"
+                label={isAnime ? "Essais bonus (année / n° d'opening)" : "Essais année"}
                 value={settings.yearGuessAttempts}
                 display={String(settings.yearGuessAttempts)}
                 min={0}
@@ -478,7 +544,7 @@ export default function Lobby() {
                   className="w-4 h-4 accent-accent disabled:opacity-60"
                 />
                 <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
-                  Indice sur l'artiste en cours de manche
+                  {isAnime ? "Indice sur la saison de diffusion" : "Indice sur l'artiste en cours de manche"}
                 </span>
               </label>
 
@@ -491,7 +557,7 @@ export default function Lobby() {
                   className="w-4 h-4 accent-accent disabled:opacity-60"
                 />
                 <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
-                  Indice sur le titre en fin de manche
+                  {isAnime ? "Indice sur le nom de l'animé en fin de manche" : "Indice sur le titre en fin de manche"}
                 </span>
               </label>
 

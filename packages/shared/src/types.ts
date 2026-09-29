@@ -1,3 +1,9 @@
+/** Classic guesses artist + title; anime asks which anime a theme song comes from. */
+export enum GameMode {
+  Classic = "classic",
+  Anime = "anime",
+}
+
 export enum GamePhase {
   Lobby = "lobby",
   Playing = "playing",
@@ -18,9 +24,41 @@ export enum GuessMatch {
   YearExhausted = "year_exhausted",
   /** The year was already found this round: no extra points. */
   YearAlreadyFound = "year_already_found",
+  /** Anime mode: the anime the theme song belongs to. */
+  Anime = "anime",
+  /** Anime mode: the theme number ("OP2", "ED1") bonus. */
+  Theme = "theme",
+  ThemeWrong = "theme_wrong",
+  ThemeExhausted = "theme_exhausted",
+  ThemeAlreadyFound = "theme_already_found",
+}
+
+export enum ThemeType {
+  Opening = "OP",
+  Ending = "ED",
+  Insert = "IN",
+}
+
+/** One OP/ED slot a song fills, as listed by AnimeThemes. */
+export interface AnimeTheme {
+  type: ThemeType
+  /** Null when the anime has a single theme of that type. */
+  sequence: number | null
+  /** e.g. "OP2", "ED1". */
+  slug: string
+}
+
+/** What the reveal shows about the anime behind a track. */
+export interface AnimeReveal {
+  name: string
+  themes: AnimeTheme[]
+  year: number | null
+  season: string | null
+  imageUrl: string | null
 }
 
 export interface LobbySettings {
+  mode: GameMode
   playlistIds: string[]
   /** Deezer playlist ids pasted by the host, not stored in the catalogue. */
   customDeezerPlaylistIds: string[]
@@ -34,6 +72,13 @@ export interface LobbySettings {
   showHint: boolean
   /** Reveal the first letters of the artist a bit earlier in the round. */
   showArtistHint: boolean
+}
+
+/** Human label for a theme slot: "Opening 2", "Ending", ... */
+export function themeLabel(theme: AnimeTheme): string {
+  const kind =
+    theme.type === ThemeType.Opening ? "Opening" : theme.type === ThemeType.Ending ? "Ending" : "Insert"
+  return theme.sequence ? `${kind} ${theme.sequence}` : kind
 }
 
 export interface DeezerPlaylistMeta {
@@ -87,6 +132,8 @@ export interface RoundOutcome {
   artist: boolean
   title: boolean
   year: boolean
+  /** Anime mode only: the theme number was found too. */
+  theme?: boolean
 }
 
 export interface PlayedTrack {
@@ -94,6 +141,7 @@ export interface PlayedTrack {
   artist: string
   year: number
   coverUrl: string | null
+  anime?: AnimeReveal
 }
 
 export type WsServerMessage =
@@ -115,11 +163,13 @@ export type WsServerMessage =
       scores: Record<string, number>
       firstBoth: boolean
       yearGuessesLeft: number
+      themeGuessesLeft: number
       /** Only echoed back to the author, so guesses never leak to opponents. */
       text?: string
       /** Only sent to the author, otherwise finding would spoil the answer. */
       revealedArtist?: string
       revealedTitle?: string
+      revealedAnime?: string
     }
   | { type: "round:hint"; kind: HintKind; hint: string }
   | {
@@ -129,6 +179,7 @@ export type WsServerMessage =
       year: number
       coverUrl: string | null
       lyrics: string | null
+      anime: AnimeReveal | null
       scores: Record<string, number>
       outcomes: Record<string, RoundOutcome[]>
       nextAt: number

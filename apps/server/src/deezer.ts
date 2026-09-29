@@ -1,4 +1,4 @@
-import type { DeezerPlaylistMeta } from "@blindmusic/shared"
+import type { AnimeReveal, DeezerPlaylistMeta } from "@blindmusic/shared"
 
 export interface Track {
   id: number
@@ -10,6 +10,14 @@ export interface Track {
   year: number
   previewUrl: string
   coverUrl: string | null
+  /** Anime mode: the anime this theme song was matched to on AnimeThemes. */
+  anime?: AnimeMatch
+}
+
+export interface AnimeMatch {
+  /** Every accepted answer: canonical names, synonyms and their base titles. */
+  names: string[]
+  reveal: AnimeReveal
 }
 
 interface DeezerArtist {
@@ -130,29 +138,36 @@ async function fetchPlayableTracks(playlistId: string): Promise<DeezerPlaylistTr
   return playable
 }
 
-/**
- * Returns up to `count` tracks pooled from every playlist. Preview URLs are
- * signed and expire after ~20min, so they are fetched at game start rather
- * than cached.
- */
-export async function pickRandomTracks(playlistIds: string[], count: number): Promise<Track[]> {
+function toTrack(t: DeezerPlaylistTrack, year: number): Track {
+  return {
+    id: t.id,
+    title: cleanTitle(t),
+    fullTitle: t.title,
+    artist: t.artist.name,
+    year,
+    previewUrl: t.preview,
+    coverUrl: t.album?.cover_big ?? t.album?.cover_medium ?? null,
+  }
+}
+
+/** Every playable track of the playlists, deduplicated and shuffled, year left unresolved. */
+export async function fetchTrackPool(playlistIds: string[]): Promise<Track[]> {
   const pages = await Promise.all(playlistIds.map((id) => fetchPlayableTracks(id).catch(() => [])))
 
   const byId = new Map<number, DeezerPlaylistTrack>()
   for (const page of pages) {
     for (const t of page) byId.set(t.id, t)
   }
+  return shuffle([...byId.values()]).map((t) => toTrack(t, 0))
+}
 
-  const selected = shuffle([...byId.values()]).slice(0, count)
+/**
+ * Returns up to `count` tracks pooled from every playlist. Preview URLs are
+ * signed and expire after ~20min, so they are fetched at game start rather
+ * than cached.
+ */
+export async function pickRandomTracks(playlistIds: string[], count: number): Promise<Track[]> {
+  const selected = (await fetchTrackPool(playlistIds)).slice(0, count)
   const years = await Promise.all(selected.map((t) => fetchYear(t.id).catch(() => 0)))
-
-  return selected.map((t, i) => ({
-    id: t.id,
-    title: cleanTitle(t),
-    fullTitle: t.title,
-    artist: t.artist.name,
-    year: years[i],
-    previewUrl: t.preview,
-    coverUrl: t.album?.cover_big ?? t.album?.cover_medium ?? null,
-  }))
+  return selected.map((t, i) => ({ ...t, year: years[i] }))
 }

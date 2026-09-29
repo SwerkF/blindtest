@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { GamePhase, GuessMatch, parseDeezerPlaylistId, type LobbySettings, type WsServerMessage } from "@blindmusic/shared"
+import { GameMode, GamePhase, GuessMatch, parseDeezerPlaylistId, type LobbySettings, type WsServerMessage } from "@blindmusic/shared"
 import { cleanTitle, type Track } from "@/deezer"
 import {
   createRoom,
@@ -24,6 +24,7 @@ const TRACK: Track = {
 }
 
 const SETTINGS: LobbySettings = {
+  mode: GameMode.Classic,
   playlistIds: ["p"],
   customDeezerPlaylistIds: [],
   trackCount: 1,

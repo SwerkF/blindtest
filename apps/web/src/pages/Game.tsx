@@ -12,8 +12,11 @@ import {
   TrendUp,
   ArrowCounterClockwise,
   Microphone,
+  Television,
+  Hash,
 } from "@phosphor-icons/react"
 import type {
+  AnimeReveal,
   LobbySettings,
   PlayedTrack,
   PlayerPublic,
@@ -21,7 +24,7 @@ import type {
   RoundPublic,
   WsServerMessage,
 } from "@blindmusic/shared"
-import { GamePhase, GuessMatch, HintKind } from "@blindmusic/shared"
+import { GameMode, GamePhase, GuessMatch, HintKind, themeLabel } from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
 import { loadSession } from "@/utils/api"
@@ -53,6 +56,7 @@ interface RevealState {
   year: number
   coverUrl: string | null
   lyrics: string | null
+  anime: AnimeReveal | null
   nextAt: number
   isLast: boolean
 }
@@ -73,6 +77,17 @@ const MATCH_LABEL: Record<GuessMatch, string> = {
   [GuessMatch.YearWrong]: "Mauvaise année",
   [GuessMatch.YearExhausted]: "Plus d'essais pour l'année",
   [GuessMatch.YearAlreadyFound]: "Année déjà trouvée",
+  [GuessMatch.Anime]: "Animé trouvé",
+  [GuessMatch.Theme]: "Bon générique",
+  [GuessMatch.ThemeWrong]: "Mauvais générique",
+  [GuessMatch.ThemeExhausted]: "Plus d'essais pour le générique",
+  [GuessMatch.ThemeAlreadyFound]: "Générique déjà trouvé",
+}
+
+/** "Opening 1 · Printemps 2019" style caption under an anime name. */
+function animeCaption(anime: AnimeReveal): string {
+  const themes = anime.themes.map(themeLabel).join(" / ")
+  return [themes, anime.year].filter(Boolean).join(" · ")
 }
 
 function secondsUntil(target: number, now: number): number {
@@ -85,11 +100,17 @@ function GuessIcon({ matched }: { matched: GuessMatch }) {
     case GuessMatch.YearWrong:
     case GuessMatch.YearExhausted:
     case GuessMatch.YearAlreadyFound:
+    case GuessMatch.ThemeWrong:
+    case GuessMatch.ThemeExhausted:
+    case GuessMatch.ThemeAlreadyFound:
       return <XCircle size={16} className="text-muted shrink-0" />
     case GuessMatch.Close:
       return <TrendUp size={16} weight="bold" className="text-amber-500 shrink-0" />
     case GuessMatch.Year:
       return <Calendar size={16} weight="fill" className="text-accent shrink-0" />
+    case GuessMatch.Theme:
+      return <Hash size={16} weight="bold" className="text-accent shrink-0" />
+    case GuessMatch.Anime:
     case GuessMatch.Artist:
     case GuessMatch.Title:
     case GuessMatch.Both:
@@ -102,17 +123,22 @@ function GuessIcon({ matched }: { matched: GuessMatch }) {
 }
 
 /** Colour-codes how well a finished round went. */
-function outcomeStyle(o: RoundOutcome | undefined) {
+function outcomeStyle(o: RoundOutcome | undefined, anime = false) {
   if (!o) return { cls: "bg-edge/60 text-transparent", label: "À venir", glyph: "" }
   const both = o.artist && o.title
+  if (anime) {
+    if (both && (o.theme || o.year)) return { cls: "bg-blue-500 text-white", label: "Animé + bonus", glyph: "✓" }
+    if (both) return { cls: "bg-green-500 text-white", label: "Animé trouvé", glyph: "✓" }
+    return { cls: "bg-red-400/80 text-white", label: "Rien trouvé", glyph: "✕" }
+  }
   if (both && o.year) return { cls: "bg-blue-500 text-white", label: "Tout trouvé", glyph: "✓" }
   if (both) return { cls: "bg-green-500 text-white", label: "Artiste + titre", glyph: "✓" }
   if (o.artist || o.title) return { cls: "bg-lime-400 text-lime-950", label: "Moitié", glyph: "~" }
   return { cls: "bg-red-400/80 text-white", label: "Rien trouvé", glyph: "✕" }
 }
 
-function TrackScore({ outcome }: { outcome: RoundOutcome | undefined }) {
-  const s = outcomeStyle(outcome)
+function TrackScore({ outcome, anime }: { outcome: RoundOutcome | undefined; anime: boolean }) {
+  const s = outcomeStyle(outcome, anime)
   return (
     <span
       title={s.label}
@@ -141,13 +167,15 @@ export default function Game() {
   const [reveal, setReveal] = useState<RevealState | null>(null)
   const [hints, setHints] = useState<Partial<Record<HintKind, string>>>({})
   const [foundBy, setFoundBy] = useState<string | null>(null)
-  const [myFind, setMyFind] = useState<{ artist: string; title: string } | null>(null)
+  const [myFind, setMyFind] = useState<string | null>(null)
   const [countdownTo, setCountdownTo] = useState<number | null>(null)
   const [guesses, setGuesses] = useState<GuessEntry[]>([])
   const [chat, setChat] = useState<ChatMsg[]>([])
   const [chatInput, setChatInput] = useState("")
   const [guessInput, setGuessInput] = useState("")
   const [yearGuessesLeft, setYearGuessesLeft] = useState(0)
+  const [themeGuessesLeft, setThemeGuessesLeft] = useState(0)
+  const [hasFoundTheme, setHasFoundTheme] = useState(false)
   const [endState, setEndState] = useState<EndState | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -207,6 +235,8 @@ export default function Game() {
           setGuessInput("")
           setPhase(GamePhase.Playing)
           setYearGuessesLeft(settingsRef.current?.yearGuessAttempts ?? 0)
+          setThemeGuessesLeft(settingsRef.current?.yearGuessAttempts ?? 0)
+          setHasFoundTheme(false)
           // Clear the per-round found markers; the server already reset them
           setPlayers((prev) =>
             prev.map((p) => ({ ...p, hasFoundArtist: false, hasFoundTitle: false, hasFoundBoth: false }))
@@ -226,9 +256,15 @@ export default function Game() {
                     ...p,
                     score: msg.scores[p.id] ?? p.score,
                     hasFoundArtist:
-                      p.hasFoundArtist || msg.matched === GuessMatch.Artist || msg.matched === GuessMatch.Both,
+                      p.hasFoundArtist ||
+                      msg.matched === GuessMatch.Artist ||
+                      msg.matched === GuessMatch.Both ||
+                      msg.matched === GuessMatch.Anime,
                     hasFoundTitle:
-                      p.hasFoundTitle || msg.matched === GuessMatch.Title || msg.matched === GuessMatch.Both,
+                      p.hasFoundTitle ||
+                      msg.matched === GuessMatch.Title ||
+                      msg.matched === GuessMatch.Both ||
+                      msg.matched === GuessMatch.Anime,
                   }
                 : p
             )
@@ -236,15 +272,20 @@ export default function Game() {
 
           if (msg.playerId === session?.playerId && msg.text !== undefined) {
             setYearGuessesLeft(msg.yearGuessesLeft)
+            setThemeGuessesLeft(msg.themeGuessesLeft)
+            if (msg.matched === GuessMatch.Theme) setHasFoundTheme(true)
             setGuesses((prev) => [
               ...prev,
               { id: idRef.current++, text: msg.text!, matched: msg.matched, points: msg.pointsEarned },
             ])
             // Only we get the answer echoed back
-            if (msg.revealedArtist && msg.revealedTitle) {
-              setMyFind({ artist: msg.revealedArtist, title: msg.revealedTitle })
+            if (msg.revealedAnime) setMyFind(msg.revealedAnime)
+            else if (msg.revealedArtist && msg.revealedTitle) {
+              setMyFind(`${msg.revealedTitle} — ${msg.revealedArtist}`)
             }
-            if (msg.firstBoth || msg.matched === GuessMatch.Both) playCue(Cue.Complete)
+            if (msg.firstBoth || msg.matched === GuessMatch.Both || msg.matched === GuessMatch.Anime) {
+              playCue(Cue.Complete)
+            }
             else if (msg.pointsEarned > 0) playCue(Cue.Match)
             else playCue(Cue.Miss)
           } else if (msg.firstBoth) {
@@ -260,6 +301,7 @@ export default function Game() {
             year: msg.year,
             coverUrl: msg.coverUrl,
             lyrics: msg.lyrics,
+            anime: msg.anime,
             nextAt: msg.nextAt,
             isLast: msg.isLast,
           })
@@ -287,7 +329,11 @@ export default function Game() {
               rank: place > 0 ? place : ranking.length,
               score: msg.scores[session.playerId] ?? 0,
               playerCount: ranking.length,
-              tracks: msg.tracks.map((track) => ({ title: track.title, artist: track.artist, year: track.year })),
+              tracks: msg.tracks.map((track) => ({
+                title: track.anime?.name ?? track.title,
+                artist: track.anime ? `${track.title} — ${track.artist}` : track.artist,
+                year: track.year,
+              })),
             })
           }
           break
@@ -310,6 +356,7 @@ export default function Game() {
   const canGuess = phase === GamePhase.Playing && !isCountdown && round !== null
 
   const me = players.find((p) => p.id === session?.playerId)
+  const isAnime = settings?.mode === GameMode.Anime
   const myOutcomes = session ? (outcomes[session.playerId] ?? []) : []
   const totalRounds = endState?.tracks.length ?? round?.total ?? 0
 
@@ -387,18 +434,29 @@ export default function Game() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ink text-sm truncate">{p.name}</p>
                 <div className="flex gap-1 mt-1">
-                  <span
-                    className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                      p.hasFoundArtist ? "bg-accent" : "bg-edge"
-                    }`}
-                    title="Artiste"
-                  />
-                  <span
-                    className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                      p.hasFoundTitle ? "bg-accent" : "bg-edge"
-                    }`}
-                    title="Titre"
-                  />
+                  {isAnime ? (
+                    <span
+                      className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+                        p.hasFoundBoth ? "bg-accent" : "bg-edge"
+                      }`}
+                      title="Animé"
+                    />
+                  ) : (
+                    <>
+                      <span
+                        className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+                          p.hasFoundArtist ? "bg-accent" : "bg-edge"
+                        }`}
+                        title="Artiste"
+                      />
+                      <span
+                        className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+                          p.hasFoundTitle ? "bg-accent" : "bg-edge"
+                        }`}
+                        title="Titre"
+                      />
+                    </>
+                  )}
                 </div>
               </div>
               <span className="font-bold text-ink text-lg tabular-nums">{scores[p.id] ?? 0}</span>
@@ -449,7 +507,7 @@ export default function Game() {
             </div>
 
             <h3 className="text-sm font-bold text-ink uppercase tracking-wider mb-3">
-              Les {endState.tracks.length} musiques jouées
+              {isAnime ? `Les ${endState.tracks.length} génériques joués` : `Les ${endState.tracks.length} musiques jouées`}
             </h3>
             <div className="flex flex-col gap-2 mb-8">
               {endState.tracks.map((t, i) => (
@@ -459,21 +517,36 @@ export default function Game() {
                   className="flex items-center gap-3 p-2 rounded-xl bg-surface border border-edge animate-rise transition-colors hover:border-muted"
                 >
                   <span className="text-xs text-muted font-mono w-6 text-center shrink-0">{i + 1}</span>
-                  {t.coverUrl ? (
-                    <img src={t.coverUrl} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                  {(t.anime?.imageUrl ?? t.coverUrl) ? (
+                    <img
+                      src={t.anime?.imageUrl ?? t.coverUrl ?? ""}
+                      alt=""
+                      className="w-10 h-10 rounded-lg object-cover shrink-0"
+                    />
                   ) : (
                     <div className="w-10 h-10 rounded-lg bg-edge flex items-center justify-center shrink-0">
                       <MusicNotes size={16} className="text-muted" />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-ink text-sm truncate">{t.title}</p>
-                    <p className="text-xs text-muted truncate">
-                      {t.artist}
-                      {t.year ? ` · ${t.year}` : ""}
-                    </p>
+                    {t.anime ? (
+                      <>
+                        <p className="font-semibold text-ink text-sm truncate">{t.anime.name}</p>
+                        <p className="text-xs text-muted truncate">
+                          {animeCaption(t.anime)} · {t.title} — {t.artist}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-semibold text-ink text-sm truncate">{t.title}</p>
+                        <p className="text-xs text-muted truncate">
+                          {t.artist}
+                          {t.year ? ` · ${t.year}` : ""}
+                        </p>
+                      </>
+                    )}
                   </div>
-                  <TrackScore outcome={myOutcomes[i]} />
+                  <TrackScore outcome={myOutcomes[i]} anime={isAnime} />
                 </div>
               ))}
             </div>
@@ -499,7 +572,7 @@ export default function Game() {
                   {Array.from({ length: totalRounds }, (_, i) => {
                     const isCurrent = round ? i === round.trackIndex - 1 : false
                     const done = myOutcomes[i]
-                    const s = outcomeStyle(done)
+                    const s = outcomeStyle(done, isAnime)
                     return (
                       <span
                         key={i}
@@ -564,9 +637,9 @@ export default function Game() {
             <div className="flex-1 min-h-0 px-6 py-4 flex flex-col">
               {reveal ? (
                 <div className="flex-1 min-h-0 flex items-center justify-center gap-6 animate-fade">
-                  {reveal.coverUrl ? (
+                  {(reveal.anime?.imageUrl ?? reveal.coverUrl) ? (
                     <img
-                      src={reveal.coverUrl}
+                      src={reveal.anime?.imageUrl ?? reveal.coverUrl ?? ""}
                       alt=""
                       className="w-40 h-40 rounded-2xl object-cover shadow-lg shrink-0 animate-pop"
                     />
@@ -576,9 +649,21 @@ export default function Game() {
                     </div>
                   )}
                   <div className="min-w-0 flex-1 max-w-md animate-rise">
-                    <p className="font-black text-3xl text-ink leading-tight">{reveal.title}</p>
-                    <p className="text-muted text-lg mt-1">{reveal.artist}</p>
-                    {reveal.year ? <p className="text-muted/70 text-sm mt-0.5">{reveal.year}</p> : null}
+                    {reveal.anime ? (
+                      <>
+                        <p className="font-black text-3xl text-ink leading-tight">{reveal.anime.name}</p>
+                        <p className="text-accent font-semibold mt-1">{animeCaption(reveal.anime)}</p>
+                        <p className="text-muted text-sm mt-1">
+                          {reveal.title} — {reveal.artist}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-black text-3xl text-ink leading-tight">{reveal.title}</p>
+                        <p className="text-muted text-lg mt-1">{reveal.artist}</p>
+                        {reveal.year ? <p className="text-muted/70 text-sm mt-0.5">{reveal.year}</p> : null}
+                      </>
+                    )}
                     {reveal.lyrics && (
                       <pre className="mt-3 max-h-28 overflow-y-auto whitespace-pre-wrap font-sans text-xs text-muted leading-relaxed border-l-2 border-edge pl-3">
                         {reveal.lyrics}
@@ -592,9 +677,7 @@ export default function Game() {
                   {myFind && (
                     <div className="mb-3 rounded-xl bg-accent/10 border border-accent/25 px-4 py-3 text-center shrink-0 animate-pop">
                       <p className="text-accent text-xs font-semibold uppercase tracking-widest">Trouvé</p>
-                      <p className="font-bold text-ink mt-1">
-                        {myFind.title} — {myFind.artist}
-                      </p>
+                      <p className="font-bold text-ink mt-1">{myFind}</p>
                     </div>
                   )}
 
@@ -602,7 +685,8 @@ export default function Game() {
                   {!myFind && foundBy && (
                     <div className="mb-3 rounded-xl bg-edge/50 border border-edge px-4 py-2.5 text-center shrink-0 animate-rise">
                       <p className="text-sm text-muted">
-                        <span className="font-semibold text-ink">{foundBy}</span> a trouvé artiste + titre
+                        <span className="font-semibold text-ink">{foundBy}</span>{" "}
+                        {isAnime ? "a trouvé l'animé" : "a trouvé artiste + titre"}
                       </p>
                     </div>
                   )}
@@ -610,10 +694,21 @@ export default function Game() {
                   <div className="flex-1 overflow-y-auto min-h-0">
                     {guesses.length === 0 && !myFind && !foundBy ? (
                       <div className="h-full flex flex-col items-center justify-center text-center animate-fade">
-                        <p className="text-muted text-sm">
-                          Écris l'artiste, le titre ou l'année dans le champ ci-dessous.
-                        </p>
-                        <p className="text-muted/70 text-xs mt-1">Les deux dans le même message comptent aussi.</p>
+                        {isAnime ? (
+                          <>
+                            <p className="text-muted text-sm">De quel animé vient ce générique ?</p>
+                            <p className="text-muted/70 text-xs mt-1">
+                              Bonus : « OP2 », « ED1 » pour le numéro, ou l'année de diffusion.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-muted text-sm">
+                              Écris l'artiste, le titre ou l'année dans le champ ci-dessous.
+                            </p>
+                            <p className="text-muted/70 text-xs mt-1">Les deux dans le même message comptent aussi.</p>
+                          </>
+                        )}
                       </div>
                     ) : (
                       <div className="grid grid-cols-3 gap-2 auto-rows-min">
@@ -665,14 +760,28 @@ export default function Game() {
               {(hints[HintKind.Artist] || hints[HintKind.Title]) && (
                 <div className="mb-2.5 flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
                   {hints[HintKind.Artist] && (
-                    <div className="flex items-center gap-2 animate-rise" title="Indice artiste">
-                      <Microphone size={15} weight="fill" className="text-amber-500" />
+                    <div
+                      className="flex items-center gap-2 animate-rise"
+                      title={isAnime ? "Saison de diffusion" : "Indice artiste"}
+                    >
+                      {isAnime ? (
+                        <Calendar size={15} weight="fill" className="text-amber-500" />
+                      ) : (
+                        <Microphone size={15} weight="fill" className="text-amber-500" />
+                      )}
                       <span className="font-mono font-bold text-ink tracking-[0.25em]">{hints[HintKind.Artist]}</span>
                     </div>
                   )}
                   {hints[HintKind.Title] && (
-                    <div className="flex items-center gap-2 animate-rise" title="Indice titre">
-                      <Lightbulb size={15} weight="fill" className="text-amber-500" />
+                    <div
+                      className="flex items-center gap-2 animate-rise"
+                      title={isAnime ? "Indice animé" : "Indice titre"}
+                    >
+                      {isAnime ? (
+                        <Television size={15} weight="fill" className="text-amber-500" />
+                      ) : (
+                        <Lightbulb size={15} weight="fill" className="text-amber-500" />
+                      )}
                       <span className="font-mono font-bold text-ink tracking-[0.25em]">{hints[HintKind.Title]}</span>
                     </div>
                   )}
@@ -684,7 +793,7 @@ export default function Game() {
                   value={guessInput}
                   onChange={(e) => setGuessInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && submitGuess()}
-                  placeholder="Artiste, titre ou année…"
+                  placeholder={isAnime ? "Nom de l'animé, OP/ED ou année…" : "Artiste, titre ou année…"}
                   disabled={!canGuess}
                   className="flex-1 min-w-0 border border-edge bg-surface rounded-xl px-4 py-3 text-ink focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
                 />
@@ -697,8 +806,24 @@ export default function Game() {
                 </button>
               </div>
               <div className="flex gap-4 mt-2 text-xs text-muted">
-                <span>Artiste {me?.hasFoundArtist ? "✓" : "— 5 pts"}</span>
-                <span>Titre {me?.hasFoundTitle ? "✓" : "— 5 pts"}</span>
+                {isAnime ? (
+                  <>
+                    <span>Animé {me?.hasFoundBoth ? "✓" : "— 20 pts"}</span>
+                    <span>
+                      N° générique —{" "}
+                      {hasFoundTheme
+                        ? "✓"
+                        : themeGuessesLeft > 0
+                          ? `${themeGuessesLeft} essai${themeGuessesLeft > 1 ? "s" : ""}`
+                          : "épuisés"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>Artiste {me?.hasFoundArtist ? "✓" : "— 5 pts"}</span>
+                    <span>Titre {me?.hasFoundTitle ? "✓" : "— 5 pts"}</span>
+                  </>
+                )}
                 <span>
                   Année —{" "}
                   {yearGuessesLeft > 0 ? `${yearGuessesLeft} essai${yearGuessesLeft > 1 ? "s" : ""}` : "épuisés"}
