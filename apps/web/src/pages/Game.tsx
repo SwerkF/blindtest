@@ -13,7 +13,6 @@ import {
   ArrowCounterClockwise,
   Microphone,
   Television,
-  Crown,
   Smiley,
   SignOut,
 } from "@phosphor-icons/react"
@@ -217,10 +216,7 @@ function FoundBadges({ player, anime }: { player: PlayerPublic; anime: boolean }
 function LeaderCrown() {
   return (
     <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none" title="En tête">
-      <span className="relative inline-flex overflow-hidden rounded-sm animate-crown">
-        <Crown size={22} weight="fill" className="text-amber-400" />
-        <span className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/80 to-transparent animate-glint" />
-      </span>
+      <span className="crown w-6 h-6" />
     </span>
   )
 }

@@ -50,14 +50,14 @@ const Avatar = ({ name, size = 36, onEdit, animate = "hover", status }: AvatarPr
       hue={config.hue ?? undefined}
       tone={config.tone ? TONE_VALUE[config.tone] : undefined}
       expression={expression}
-      className="shrink-0"
+      className="shrink-0 block"
     />
   )
   const face = status ? (
-    <span className="relative inline-flex shrink-0" title={STATUS_LABEL[status]}>
+    <span className="relative block shrink-0" style={{ width: size, height: size }} title={STATUS_LABEL[status]}>
       {blob}
       <span
-        className={`absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full ring-2 ring-surface ${STATUS_DOT[status]}`}
+        className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full ring-2 ring-surface ${STATUS_DOT[status]}`}
       />
     </span>
   ) : (
