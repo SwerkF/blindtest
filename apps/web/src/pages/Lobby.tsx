@@ -312,10 +312,10 @@ export default function Lobby() {
   if (!session) return <Navigate to={`/join/${code}`} replace />
 
   return (
-    <div className="min-h-screen bg-canvas px-4 py-12">
-      <div className="w-full max-w-3xl mx-auto">
+    <div className="min-h-screen bg-canvas px-4 py-6 lg:py-8">
+      <div className="w-full max-w-[1400px] mx-auto">
         {/* Header */}
-        <div className="flex items-start justify-between mb-10">
+        <div className="flex items-start justify-between mb-6">
           <div>
             <p className="text-muted text-sm font-medium uppercase tracking-widest mb-1">Code du salon</p>
             <div className="flex items-center gap-3">
@@ -356,6 +356,9 @@ export default function Lobby() {
           </div>
         </div>
 
+        <div className="grid gap-6 items-start lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,1fr)]">
+        {/* Colonne 1 : mode et playlists */}
+        <div className="min-w-0">
         {/* Mode de jeu */}
         <section className="mb-6">
           <div className="grid grid-cols-2 gap-2">
@@ -511,10 +514,12 @@ export default function Lobby() {
             </form>
           )}
         </section>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Colonnes 2 et 3 : empilées sur écran moyen, côte à côte sur grand écran */}
+        <div className="flex flex-col gap-6 min-w-0 xl:contents">
           {/* Joueurs */}
-          <div className="bg-surface rounded-2xl p-6 border border-edge">
+          <div className="bg-surface rounded-2xl p-5 border border-edge">
             <div className="flex items-center gap-2 mb-4">
               <Users size={18} className="text-accent" />
               <h3 className="font-semibold text-ink">Joueurs ({players.length})</h3>
@@ -542,14 +547,15 @@ export default function Lobby() {
             </ul>
           </div>
 
-          {/* Paramètres */}
-          <div className="bg-surface rounded-2xl p-6 border border-edge">
+          {/* Paramètres et lancement */}
+          <div className="flex flex-col gap-4 min-w-0">
+          <div className="bg-surface rounded-2xl p-5 border border-edge">
             <div className="flex items-center gap-2 mb-4">
               <h3 className="font-semibold text-ink">Paramètres</h3>
               {!isHost && <span className="text-xs text-muted ml-auto">Configuré par l'hôte</span>}
             </div>
 
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-4">
               <Setting
                 label="Nombre de musiques"
                 value={trackCount}
@@ -668,39 +674,41 @@ export default function Lobby() {
               </div>
             </div>
           </div>
+    {error && <p className="text-center text-red-500 text-sm">{error}</p>}
+
+    {isHost ? (
+      <button
+        onClick={handleStart}
+        disabled={!playlistCount() || preparing}
+        className="w-full flex items-center justify-center gap-3 bg-inverse text-inverse-ink py-4 rounded-2xl font-bold text-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+      >
+        {preparing ? (
+          <CircleNotch size={22} weight="bold" className="animate-spin" />
+        ) : (
+          <Play size={22} weight="fill" />
+        )}
+        {preparing ? "Préparation de la partie…" : "Lancer la partie"}
+      </button>
+    ) : (
+      <p className="text-center text-muted text-sm flex items-center justify-center gap-2">
+        {preparing && <CircleNotch size={16} weight="bold" className="animate-spin" />}
+        {preparing ? "Préparation de la partie…" : "En attente que l'hôte lance la partie…"}
+      </p>
+    )}
+    {preparing && isAnime && (
+      <p className="-mt-2 text-center text-xs text-muted">
+        Recherche des génériques d'animés, la partie démarre dès que le premier est prêt.
+      </p>
+    )}
+          </div>
+        </div>
         </div>
 
         {editingAvatar && (
           <AvatarEditor value={profile.avatarSeed} onClose={() => setEditingAvatar(false)} onSave={saveAvatar} />
         )}
 
-        {error && <p className="mt-4 text-center text-red-500 text-sm">{error}</p>}
-
-        {isHost ? (
-          <button
-            onClick={handleStart}
-            disabled={!playlistCount() || preparing}
-            className="mt-6 w-full flex items-center justify-center gap-3 bg-inverse text-inverse-ink py-4 rounded-2xl font-bold text-lg hover:opacity-90 transition-opacity disabled:opacity-40"
-          >
-            {preparing ? (
-              <CircleNotch size={22} weight="bold" className="animate-spin" />
-            ) : (
-              <Play size={22} weight="fill" />
-            )}
-            {preparing ? "Préparation de la partie…" : "Lancer la partie"}
-          </button>
-        ) : (
-          <p className="mt-6 text-center text-muted text-sm flex items-center justify-center gap-2">
-            {preparing && <CircleNotch size={16} weight="bold" className="animate-spin" />}
-            {preparing ? "Préparation de la partie…" : "En attente que l'hôte lance la partie…"}
-          </p>
-        )}
-        {preparing && isAnime && (
-          <p className="mt-2 text-center text-xs text-muted">
-            Recherche des génériques d'animés, la partie démarre dès que le premier est prêt.
-          </p>
-        )}
-        <LegalFooter className="mt-10" />
+        <LegalFooter className="mt-6" />
       </div>
     </div>
   )

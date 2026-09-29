@@ -191,7 +191,7 @@ export default function Visualizer({ previewUrl, isPlaying, seekTo = 0 }: Props)
       {blocked && isPlaying && (
         <button
           onClick={() => void start()}
-          className="absolute inset-0 flex items-center justify-center gap-2 bg-stage/90 text-smoke font-semibold text-sm"
+          className="absolute inset-0 flex items-center justify-center gap-2 bg-stage/90 text-white font-semibold text-sm"
         >
           <Play size={18} weight="fill" className="text-toffee" />
           Activer le son
@@ -202,7 +202,7 @@ export default function Visualizer({ previewUrl, isPlaying, seekTo = 0 }: Props)
         <button
           onClick={() => setMuted(!muted)}
           aria-label={muted ? "Rétablir le son" : "Couper le son"}
-          className="text-khaki hover:text-toffee transition-colors"
+          className="text-white/60 hover:text-toffee transition-colors"
         >
           {muted || volume === 0 ? <SpeakerSlash size={15} /> : <SpeakerHigh size={15} />}
         </button>

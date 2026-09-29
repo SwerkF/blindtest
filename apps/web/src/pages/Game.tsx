@@ -812,8 +812,8 @@ export default function Game() {
               <div className="h-24 shrink-0 relative">
                 <Visualizer previewUrl={round?.previewUrl ?? null} isPlaying={canGuess} seekTo={seekTo} />
                 {isCountdown && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-pitch/85 rounded-xl gap-4 animate-fade">
-                    <span className="text-khaki text-xs uppercase tracking-widest">Départ dans</span>
+                  <div className="absolute inset-0 flex items-center justify-center bg-stage/90 rounded-xl gap-4 animate-fade">
+                    <span className="text-white/70 text-xs uppercase tracking-widest">Départ dans</span>
                     <span className="text-toffee text-4xl font-black tabular-nums leading-none animate-pop">
                       {countdownLeft}
                     </span>

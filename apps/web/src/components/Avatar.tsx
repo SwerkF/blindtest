@@ -53,16 +53,28 @@ const Avatar = ({ name, size = 36, onEdit, animate = "hover", status }: AvatarPr
       className="shrink-0 block"
     />
   )
+  // Discord-style presence: a small dot astride the corner, with a transparent notch cut out of the avatar
+  const dot = Math.max(8, Math.min(14, Math.round(size * 0.22)))
+  const notch = dot / 2 + 2.5
+  // Blobs do not reach the corners of their box: pull the dot in so it bites into the shape
+  const inset = Math.round(size * 0.08)
+  const offset = inset + dot / 2
+  const centre = `calc(100% - ${offset}px) calc(100% - ${offset}px)`
+  const mask = `radial-gradient(circle at ${centre}, transparent ${notch}px, #000 ${notch + 0.5}px)`
   const face = status ? (
     <span className="relative block shrink-0" style={{ width: size, height: size }} title={STATUS_LABEL[status]}>
-      {blob}
+      <span className="block" style={{ WebkitMaskImage: mask, maskImage: mask }}>
+        {blob}
+      </span>
       <span
-        className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full ring-2 ring-surface ${STATUS_DOT[status]}`}
+        className={`absolute rounded-full ${STATUS_DOT[status]}`}
+        style={{ width: dot, height: dot, right: inset, bottom: inset }}
       />
     </span>
   ) : (
     blob
   )
+
   if (!onEdit) return face
   return (
     <button
