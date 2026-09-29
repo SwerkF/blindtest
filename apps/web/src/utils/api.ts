@@ -1,4 +1,4 @@
-import type { DeezerPlaylistMeta, GamePhase } from "@blindmusic/shared"
+import type { DeezerPlaylistMeta, GameMode, GamePhase } from "@blindmusic/shared"
 
 const BASE = "/api"
 
@@ -9,6 +9,7 @@ export interface PlaylistItem {
   description: string | null
   coverUrl: string | null
   trackCount: number
+  category: GameMode
 }
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {

@@ -17,3 +17,4 @@
 - Playback uses ~30s Deezer track previews.
 - Local/deploy stack is driven by Docker Compose; intended production host is `https://blindtest.oliwr.win`.
 - Core scoring: artist alone 5, title alone 5, both 20 with −2 per later finder; year is a limited-try bonus (+2).
+- Anime blind-test mode (`GameMode.Anime`): Deezer playlist tracks are matched to AnimeThemes.moe songs (`apps/server/src/anime.ts`, 90 req/min quota); players guess the anime (names + synonyms), with an OP/ED number bonus (+3) and the anime year bonus. Curated playlists carry a `category` (`classic` | `anime`).

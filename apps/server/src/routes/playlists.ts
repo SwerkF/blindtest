@@ -5,7 +5,7 @@ import { fetchPlaylistMeta } from "@/deezer"
 export default async function playlistsRoute(fastify: FastifyInstance) {
   fastify.get("/playlists", async () => {
     return prisma.playlist.findMany({
-      select: { id: true, name: true, slug: true, description: true, coverUrl: true, trackCount: true },
+      select: { id: true, name: true, slug: true, description: true, coverUrl: true, trackCount: true, category: true },
       orderBy: { name: "asc" },
     })
   })
