@@ -56,28 +56,55 @@ function Contact() {
   )
 }
 
+const PUBLISHER_ADDRESS = PUBLISHER.address || PUBLISHER.city
+
 function Notice() {
   return (
     <>
+      <p className="text-sm text-ink/85 leading-relaxed mb-8">
+        Conformément aux articles 6-III et 19 de la loi n° 2004-575 du 21 juin 2004 pour la confiance dans
+        l'économie numérique (LCEN), voici les informations sur l'éditeur et l'hébergeur de {SITE.name}.
+      </p>
+
       <Section title="Éditeur du site">
         <p>
           Le site {SITE.name} (<Ext href={SITE.url}>{SITE.url.replace("https://", "")}</Ext>) est édité par{" "}
+          {PUBLISHER.owner}, entrepreneur individuel exerçant sous le nom commercial{" "}
           <Ext href={PUBLISHER.url}>{PUBLISHER.name}</Ext>.
         </p>
         <div className="flex flex-col gap-1">
+          <Field label="Nom commercial" value={PUBLISHER.name} />
+          <Field label="Exploitant" value={PUBLISHER.owner} />
           <Field label="Forme juridique" value={PUBLISHER.legalForm} />
+          <Field label="Siège" value={PUBLISHER_ADDRESS} />
           <Field label="SIRET" value={PUBLISHER.siret} />
-          <Field label="Adresse" value={PUBLISHER.address} />
-          <Field label="Directeur de la publication" value={PUBLISHER.director} />
+          <Field label="N° TVA intracommunautaire" value={PUBLISHER.vat} />
+          <Field label="Téléphone" value={PUBLISHER.phone} />
           <p>
-            <span className="text-muted">Contact : </span>
+            <span className="text-muted">Email : </span>
             <Contact />
           </p>
         </div>
       </Section>
 
+      <Section title="Directeur de la publication">
+        <p>
+          Le directeur de la publication est {PUBLISHER.owner}, responsable légal de {PUBLISHER.name}.
+        </p>
+      </Section>
+
       <Section title="Hébergement">
-        {HOST.name ? (
+        {HOST.selfHosted ? (
+          <>
+            <p>
+              Le site est hébergé par son éditeur, {PUBLISHER.name}, sur un serveur situé en France.
+            </p>
+            <div className="flex flex-col gap-1">
+              <Field label="Adresse" value={PUBLISHER_ADDRESS} />
+              <Field label="Téléphone" value={PUBLISHER.phone} />
+            </div>
+          </>
+        ) : HOST.name ? (
           <div className="flex flex-col gap-1">
             <Field label="Hébergeur" value={HOST.url ? <Ext href={HOST.url}>{HOST.name}</Ext> : HOST.name} />
             <Field label="Adresse" value={HOST.address} />
@@ -89,8 +116,9 @@ function Notice() {
 
       <Section title="Propriété intellectuelle">
         <p>
-          Le code, le design et les textes du site appartiennent à {PUBLISHER.name}. Toute reproduction sans
-          autorisation est interdite.
+          Le code, le design et les textes du site sont la propriété exclusive de {PUBLISHER.name}. Toute
+          reproduction, représentation, modification ou adaptation, totale ou partielle, est interdite sans
+          autorisation écrite préalable.
         </p>
         <p>
           Les extraits musicaux, pochettes, noms d'artistes et de titres appartiennent à leurs ayants droit. Ils sont
@@ -102,6 +130,20 @@ function Notice() {
         <p>
           {SITE.name} n'est affilié ni à Deezer, ni à AnimeThemes, ni à AniList. Pour toute demande de retrait d'un
           contenu, contactez l'éditeur (<Contact />).
+        </p>
+      </Section>
+
+      <Section title="Liens externes">
+        <p>
+          Le site contient des liens vers des sites tiers. {PUBLISHER.name} décline toute responsabilité quant à leur
+          contenu et à leur politique de confidentialité.
+        </p>
+      </Section>
+
+      <Section title="Droit applicable">
+        <p>
+          Les présentes mentions légales sont soumises au droit français. Tout litige relatif à leur interprétation
+          ou à leur exécution relève de la compétence des tribunaux français.
         </p>
       </Section>
     </>
@@ -176,8 +218,12 @@ function Privacy() {
     <>
       <Section title="Responsable du traitement">
         <p>
-          Les données sont traitées par <Ext href={PUBLISHER.url}>{PUBLISHER.name}</Ext>, éditeur de {SITE.name}.
-          Contact : <Contact />.
+          Le responsable du traitement est <Ext href={PUBLISHER.url}>{PUBLISHER.name}</Ext> ({PUBLISHER.owner}),
+          éditeur de {SITE.name}, dont les coordonnées figurent dans les{" "}
+          <Link to={`/${LegalDoc.Notice}`} className="text-accent hover:underline">
+            mentions légales
+          </Link>
+          . Contact : <Contact />.
         </p>
         <p>
           Le principe du jeu est d'en collecter le moins possible : pas de compte, pas d'adresse e-mail, pas de
@@ -250,6 +296,21 @@ function Privacy() {
             serveur, sans aucune donnée vous concernant.
           </li>
         </ul>
+      </Section>
+
+      <Section title="Hébergement et transferts hors Union européenne">
+        <p>
+          Le serveur du jeu est hébergé en France par l'éditeur. Les seules données qui peuvent quitter l'Union
+          européenne sont votre adresse IP et les informations techniques de votre navigateur, lorsqu'il charge la
+          police depuis Google Fonts (États-Unis) ou les images d'AnimeThemes. Deezer est une société française.
+        </p>
+      </Section>
+
+      <Section title="Sécurité">
+        <p>
+          Les échanges avec le site sont chiffrés (TLS). Aucune donnée de partie n'étant enregistrée, rien n'est
+          conservé au-delà de la vie d'un salon.
+        </p>
       </Section>
 
       <Section title="Vos droits">
