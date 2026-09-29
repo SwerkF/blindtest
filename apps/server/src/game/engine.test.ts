@@ -32,6 +32,7 @@ const SETTINGS: LobbySettings = {
   yearGuessAttempts: 2,
   showLyrics: false,
   showHint: false,
+  showArtistHint: false,
 }
 
 async function room(code: string, players: string[]) {
@@ -121,9 +122,44 @@ test("un nombre a 4 chiffres est lu comme une annee et consomme les essais", asy
   expect(right?.pointsEarned).toBe(2)
   expect(right?.yearGuessesLeft).toBe(0)
 
-  const exhausted = processGuess("T6", "a", "2001")
-  expect(exhausted?.matched).toBe(GuessMatch.YearExhausted)
+  const exhausted = processGuess("T6", "a", "2002")
+  expect(exhausted?.matched).toBe(GuessMatch.YearAlreadyFound)
   expect(exhausted?.pointsEarned).toBe(0)
+
+  r.cleanup()
+})
+
+test("renvoyer la bonne annee deja trouvee ne rapporte plus rien", async () => {
+  const r = await room("T6b", ["a"])
+
+  expect(processGuess("T6b", "a", "2001")?.pointsEarned).toBe(2)
+
+  const again = processGuess("T6b", "a", "2001")
+  expect(again?.matched).toBe(GuessMatch.YearAlreadyFound)
+  expect(again?.pointsEarned).toBe(0)
+  // Aucun essai consomme pour rien
+  expect(again?.yearGuessesLeft).toBe(1)
+
+  expect(processGuess("T6b", "a", "Céline Dion")?.pointsEarned).toBe(5)
+
+  r.cleanup()
+})
+
+test("un joueur peut rejoindre une partie en cours et jouer la manche", async () => {
+  const r = await room("T11", ["a"])
+
+  expect(addPlayer("T11", "late", "late", "late", () => {})).not.toBeNull()
+  expect(processGuess("T11", "late", "Céline Dion Sous le vent")?.pointsEarned).toBe(20)
+
+  removePlayer("T11", "late")
+  r.cleanup()
+})
+
+test("l'hote est transfere quand il quitte la salle", async () => {
+  const r = await room("T12", ["a", "b"])
+
+  removePlayer("T12", "a")
+  expect(r.last("lobby:update")?.hostId).toBe("b")
 
   r.cleanup()
 })

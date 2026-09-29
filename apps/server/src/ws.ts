@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import type { WsClientMessage, WsServerMessage } from "@blindmusic/shared"
+import { GamePhase, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
 import {
   rooms,
   registerSocket,
@@ -10,8 +10,8 @@ import {
   updateSettings,
   updateAvatar,
   startGame,
-  restartToLobby,
   processGuess,
+  getEndSummary,
 } from "@/game/engine"
 import { pickRandomTracks } from "@/deezer"
 import { prisma } from "@/db"
@@ -48,6 +48,8 @@ export default async function wsRoute(fastify: FastifyInstance) {
     } else {
       const startsAt = getPendingStart(code)
       if (startsAt) send({ type: "game:start", startsAt })
+      const summary = getEndSummary(code)
+      if (summary) send(summary)
     }
 
     socket.on("message", async (raw: Buffer) => {
@@ -70,6 +72,7 @@ export default async function wsRoute(fastify: FastifyInstance) {
 
         case "lobby:start": {
           if (room.hostId !== playerId) return
+          if (room.phase !== GamePhase.Lobby && room.phase !== GamePhase.End) return
           const requestedIds = msg.settings.playlistIds ?? []
           const playlists = requestedIds.length
             ? await prisma.playlist.findMany({ where: { id: { in: requestedIds } } })
@@ -115,11 +118,6 @@ export default async function wsRoute(fastify: FastifyInstance) {
               p.send(p.id === playerId ? mine : shared)
             } catch {}
           }
-          break
-        }
-
-        case "lobby:restart": {
-          restartToLobby(code)
           break
         }
 

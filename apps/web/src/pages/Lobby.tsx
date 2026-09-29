@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
-import { Users, Play, Copy, Check, MusicNotes } from "@phosphor-icons/react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useParams, useNavigate, Navigate } from "react-router-dom"
+import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query"
+import { Users, Play, Copy, Check, MusicNotes, ShareNetwork, X } from "@phosphor-icons/react"
 import {
   GamePhase,
   MAX_ROUND_DURATION,
@@ -14,8 +14,9 @@ import {
 } from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
-import { api, loadSession, type PlaylistItem } from "@/utils/api"
+import { api, inviteUrl, loadSession, type PlaylistItem } from "@/utils/api"
 import Avatar from "@/components/Avatar"
+import AvatarEditor from "@/components/AvatarEditor"
 import ThemeToggle from "@/components/ThemeToggle"
 
 const DEFAULT_SETTINGS: LobbySettings = {
@@ -27,6 +28,7 @@ const DEFAULT_SETTINGS: LobbySettings = {
   yearGuessAttempts: 2,
   showLyrics: false,
   showHint: true,
+  showArtistHint: true,
 }
 
 function normalizeSettings(settings: LobbySettings): LobbySettings {
@@ -38,82 +40,101 @@ function normalizeSettings(settings: LobbySettings): LobbySettings {
   }
 }
 
+function fallbackMeta(id: string): DeezerPlaylistMeta {
+  return { id, name: "Playlist Deezer", coverUrl: null, trackCount: 0 }
+}
+
 export default function Lobby() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const session = loadSession(code!)
   const { send, onMessage, connected } = useWs(code ?? "", session?.playerId ?? "")
 
   const [players, setPlayers] = useState<PlayerPublic[]>([])
+  const [hostId, setHostId] = useState<string | null>(null)
   const [settings, setSettings] = useState<LobbySettings>(DEFAULT_SETTINGS)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<"code" | "link" | null>(null)
   const [error, setError] = useState("")
   const [playlistUrl, setPlaylistUrl] = useState("")
   const [addingPlaylist, setAddingPlaylist] = useState(false)
-  const { reroll } = useProfile()
+  const [editingAvatar, setEditingAvatar] = useState(false)
+  /** The server has no settings yet and the host has to publish the initial ones. */
+  const [needsInitialSync, setNeedsInitialSync] = useState(false)
+  const { profile, setAvatar } = useProfile()
 
-  const isHost = players[0]?.id === session?.playerId
+  const isHost = hostId !== null && hostId === session?.playerId
+  // Refs so async handlers and callbacks always build on the latest state, never a stale closure
+  const settingsRef = useRef(settings)
+  const isHostRef = useRef(isHost)
+  isHostRef.current = isHost
+  /** Once the host has synced, their local settings win over echoes of older updates. */
+  const hostSyncedRef = useRef(false)
 
   const { data: playlists } = useQuery<PlaylistItem[]>({
     queryKey: ["playlists"],
     queryFn: api.playlists,
   })
 
-  const { data: customMetas } = useQuery<DeezerPlaylistMeta[]>({
-    queryKey: ["deezer-playlists", settings.customDeezerPlaylistIds],
-    enabled: settings.customDeezerPlaylistIds.length > 0,
-    queryFn: async () => {
-      const metas: DeezerPlaylistMeta[] = []
-      for (const id of settings.customDeezerPlaylistIds) {
-        try {
-          metas.push(await api.deezerPlaylist(id))
-        } catch {
-          metas.push({ id, name: "Playlist Deezer", coverUrl: null, trackCount: 0 })
-        }
-      }
-      return metas
-    },
+  // One query per playlist, so adding one never refetches (nor blanks) the others
+  const customQueries = useQueries({
+    queries: settings.customDeezerPlaylistIds.map((id) => ({
+      queryKey: ["deezer-playlist", id],
+      queryFn: () => api.deezerPlaylist(id).catch(() => fallbackMeta(id)),
+      staleTime: Number.POSITIVE_INFINITY,
+    })),
   })
-
-  // Preselect the first playlist so a host can start immediately
-  useEffect(() => {
-    if (!playlists?.length) return
-    setSettings((current) => {
-      if (current.playlistIds.length || current.customDeezerPlaylistIds.length) return current
-      return { ...current, playlistIds: [playlists[0].id] }
-    })
-  }, [playlists])
+  const customMetas = customQueries.map((query) => query.data).filter((meta) => meta !== undefined)
+  const customPending = customQueries.some((query) => query.isPending)
 
   const availableTracks = useMemo(() => {
     const curated =
       playlists
         ?.filter((p) => settings.playlistIds.includes(p.id))
         .reduce((sum, p) => sum + p.trackCount, 0) ?? 0
-    const custom =
-      customMetas
-        ?.filter((p) => settings.customDeezerPlaylistIds.includes(p.id))
-        .reduce((sum, p) => sum + p.trackCount, 0) ?? 0
+    const custom = customMetas.reduce((sum, p) => sum + p.trackCount, 0)
     return curated + custom
-  }, [playlists, customMetas, settings.playlistIds, settings.customDeezerPlaylistIds])
+  }, [playlists, customMetas, settings.playlistIds])
 
   // Cap the slider to what the selected playlists can actually deliver
   const maxTracks = useMemo(() => {
-    const cap = Math.min(MAX_TRACK_COUNT, availableTracks)
+    // Unknown sizes must not shrink the host's choice while they load
+    const cap = customPending || !playlists ? MAX_TRACK_COUNT : Math.min(MAX_TRACK_COUNT, availableTracks)
     return Math.max(TRACK_COUNT_STEP, Math.floor(cap / TRACK_COUNT_STEP) * TRACK_COUNT_STEP)
-  }, [availableTracks])
+  }, [availableTracks, customPending, playlists])
+  const trackCount = Math.min(settings.trackCount, maxTracks)
 
-  useEffect(() => {
-    if (settings.trackCount > maxTracks) updateSetting("trackCount", maxTracks)
-  }, [maxTracks])
+  function commitSettings(next: LobbySettings) {
+    settingsRef.current = next
+    setSettings(next)
+    if (isHostRef.current) send({ type: "lobby:settings", settings: next })
+  }
+
+  function updateSetting<K extends keyof LobbySettings>(key: K, value: LobbySettings[K]) {
+    commitSettings({ ...settingsRef.current, [key]: value })
+  }
 
   useEffect(() => {
     return onMessage((msg) => {
       switch (msg.type) {
-        case "lobby:update":
+        case "lobby:update": {
           setPlayers(msg.players)
-          if (msg.settings) setSettings(normalizeSettings(msg.settings))
-          if (msg.phase === GamePhase.Playing) navigate(`/game/${code}`)
+          setHostId(msg.hostId)
+          const amHost = msg.hostId === session?.playerId
+          if (!amHost) hostSyncedRef.current = false
+          if (msg.settings && !(amHost && hostSyncedRef.current)) {
+            const next = normalizeSettings(msg.settings)
+            settingsRef.current = next
+            setSettings(next)
+          }
+          if (amHost && !hostSyncedRef.current) {
+            hostSyncedRef.current = true
+            if (!msg.settings) setNeedsInitialSync(true)
+          }
+          // Late joiners go straight into the running game
+          if (msg.phase === GamePhase.Playing || msg.phase === GamePhase.Reveal) navigate(`/game/${code}`)
           break
+        }
         case "game:start":
           // The game page picks the countdown back up from the same timestamp
           navigate(`/game/${code}`)
@@ -125,13 +146,16 @@ export default function Lobby() {
           break
       }
     })
-  }, [onMessage, navigate, code])
+  }, [onMessage, navigate, code, session?.playerId])
 
-  function updateSetting<K extends keyof LobbySettings>(key: K, value: LobbySettings[K]) {
-    const next = { ...settings, [key]: value }
-    setSettings(next)
-    if (isHost) send({ type: "lobby:settings", settings: next })
-  }
+  // Fresh room: preselect the first playlist so the host can start immediately, and share it
+  useEffect(() => {
+    if (!needsInitialSync || !playlists || !isHost) return
+    setNeedsInitialSync(false)
+    const current = settingsRef.current
+    const empty = !current.playlistIds.length && !current.customDeezerPlaylistIds.length
+    commitSettings(empty && playlists.length ? { ...current, playlistIds: [playlists[0].id] } : current)
+  }, [needsInitialSync, playlists, isHost])
 
   function playlistCount() {
     return settings.playlistIds.length + settings.customDeezerPlaylistIds.length
@@ -139,15 +163,17 @@ export default function Lobby() {
 
   function togglePlaylist(id: string) {
     if (!isHost) return
-    const has = settings.playlistIds.includes(id)
-    if (has && settings.playlistIds.length === 1 && settings.customDeezerPlaylistIds.length === 0) return
-    updateSetting("playlistIds", has ? settings.playlistIds.filter((p) => p !== id) : [...settings.playlistIds, id])
+    const current = settingsRef.current
+    const has = current.playlistIds.includes(id)
+    if (has && current.playlistIds.length === 1 && current.customDeezerPlaylistIds.length === 0) return
+    updateSetting("playlistIds", has ? current.playlistIds.filter((p) => p !== id) : [...current.playlistIds, id])
   }
 
   function removeCustom(id: string) {
     if (!isHost) return
-    const next = settings.customDeezerPlaylistIds.filter((p) => p !== id)
-    if (next.length === 0 && settings.playlistIds.length === 0) return
+    const current = settingsRef.current
+    const next = current.customDeezerPlaylistIds.filter((p) => p !== id)
+    if (next.length === 0 && current.playlistIds.length === 0) return
     updateSetting("customDeezerPlaylistIds", next)
   }
 
@@ -158,15 +184,20 @@ export default function Lobby() {
       setError("Colle un lien de playlist Deezer")
       return
     }
-    if (settings.customDeezerPlaylistIds.includes(id)) {
+    if (settingsRef.current.customDeezerPlaylistIds.includes(id)) {
       setPlaylistUrl("")
       return
     }
     setAddingPlaylist(true)
     setError("")
     try {
-      await api.deezerPlaylist(id)
-      updateSetting("customDeezerPlaylistIds", [...settings.customDeezerPlaylistIds, id])
+      const meta = await api.deezerPlaylist(id)
+      queryClient.setQueryData(["deezer-playlist", id], meta)
+      // Read the settings after the await: they may have changed while Deezer answered
+      const current = settingsRef.current
+      if (!current.customDeezerPlaylistIds.includes(id)) {
+        updateSetting("customDeezerPlaylistIds", [...current.customDeezerPlaylistIds, id])
+      }
       setPlaylistUrl("")
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Playlist introuvable")
@@ -175,8 +206,9 @@ export default function Lobby() {
     }
   }
 
-  function handleReroll() {
-    const avatarSeed = reroll()
+  function saveAvatar(avatarSeed: string) {
+    setAvatar(avatarSeed)
+    setEditingAvatar(false)
     setPlayers((prev) => prev.map((p) => (p.id === session?.playerId ? { ...p, avatarSeed } : p)))
     send({ type: "player:avatar", avatarSeed })
   }
@@ -184,27 +216,36 @@ export default function Lobby() {
   function handleStart() {
     if (!playlistCount()) return
     setError("")
-    send({ type: "lobby:start", settings })
+    send({ type: "lobby:start", settings: { ...settingsRef.current, trackCount } })
+  }
+
+  function flashCopied(kind: "code" | "link") {
+    setCopied(kind)
+    setTimeout(() => setCopied(null), 1500)
   }
 
   function copyCode() {
-    navigator.clipboard.writeText(code ?? "")
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    void navigator.clipboard.writeText(code ?? "")
+    flashCopied("code")
   }
 
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-canvas flex items-center justify-center">
-        <p className="text-muted">
-          Session expirée.{" "}
-          <a href="/" className="text-accent">
-            Retour à l'accueil
-          </a>
-        </p>
-      </div>
-    )
+  async function shareInvite() {
+    const url = inviteUrl(code ?? "")
+    // Native share sheet on mobile, clipboard everywhere else
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: "Blindtest", text: "Rejoins ma partie de blindtest !", url })
+        return
+      } catch {
+        // Dismissed or unsupported payload: fall back to the clipboard
+      }
+    }
+    await navigator.clipboard.writeText(url).catch(() => {})
+    flashCopied("link")
   }
+
+  // Someone opening the lobby URL directly just needs a pseudo first
+  if (!session) return <Navigate to={`/join/${code}`} replace />
 
   return (
     <div className="min-h-screen bg-canvas px-4 py-12">
@@ -215,10 +256,22 @@ export default function Lobby() {
             <p className="text-muted text-sm font-medium uppercase tracking-widest mb-1">Code du salon</p>
             <div className="flex items-center gap-3">
               <span className="text-5xl font-black text-ink tracking-widest font-mono">{code}</span>
-              <button onClick={copyCode} className="text-muted hover:text-accent transition-colors p-1">
-                {copied ? <Check size={20} /> : <Copy size={20} />}
+              <button
+                onClick={copyCode}
+                aria-label="Copier le code"
+                className="text-muted hover:text-accent transition-colors p-1"
+              >
+                {copied === "code" ? <Check size={20} /> : <Copy size={20} />}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => void shareInvite()}
+              className="mt-3 flex items-center gap-2 text-sm font-semibold bg-accent text-white px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
+            >
+              {copied === "link" ? <Check size={16} weight="bold" /> : <ShareNetwork size={16} weight="bold" />}
+              {copied === "link" ? "Lien copié !" : "Inviter des amis"}
+            </button>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm">
@@ -273,14 +326,12 @@ export default function Lobby() {
               )
             })}
             {settings.customDeezerPlaylistIds.map((id) => {
-              const meta = customMetas?.find((p) => p.id === id)
+              const meta = customMetas.find((p) => p.id === id)
+              const removable = isHost && playlistCount() > 1
               return (
-                <button
+                <div
                   key={id}
-                  type="button"
-                  onClick={() => removeCustom(id)}
-                  disabled={!isHost}
-                  className="relative flex items-center gap-3 p-2 pr-3 rounded-xl border text-left border-accent bg-accent/5 disabled:cursor-default"
+                  className="relative flex items-center gap-3 p-2 pr-3 rounded-xl border text-left border-accent bg-accent/5"
                 >
                   <div className="w-11 h-11 shrink-0 rounded-lg bg-edge overflow-hidden">
                     {meta?.coverUrl ? (
@@ -297,8 +348,20 @@ export default function Lobby() {
                     </p>
                     <p className="text-xs text-muted">{meta ? `${meta.trackCount} titres` : "…"}</p>
                   </div>
-                  <Check size={15} weight="bold" className="text-accent shrink-0" />
-                </button>
+                  {removable ? (
+                    <button
+                      type="button"
+                      onClick={() => removeCustom(id)}
+                      aria-label="Retirer la playlist"
+                      title="Retirer la playlist"
+                      className="text-muted hover:text-red-500 transition-colors shrink-0"
+                    >
+                      <X size={15} weight="bold" />
+                    </button>
+                  ) : (
+                    <Check size={15} weight="bold" className="text-accent shrink-0" />
+                  )}
+                </div>
               )
             })}
           </div>
@@ -342,13 +405,13 @@ export default function Lobby() {
                   <Avatar
                     name={p.avatarSeed || p.name}
                     size={48}
-                    onReroll={p.id === session.playerId ? handleReroll : undefined}
+                    onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
                   />
                   <span className="font-medium text-ink">{p.name}</span>
-                  {i === 0 && (
+                  {p.id === hostId && (
                     <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full ml-auto">Hôte</span>
                   )}
-                  {p.id === session.playerId && i !== 0 && (
+                  {p.id === session.playerId && p.id !== hostId && (
                     <span className="text-xs bg-edge text-muted px-2 py-0.5 rounded-full ml-auto">Vous</span>
                   )}
                 </li>
@@ -367,8 +430,8 @@ export default function Lobby() {
             <div className="flex flex-col gap-5">
               <Setting
                 label="Nombre de musiques"
-                value={settings.trackCount}
-                display={`${settings.trackCount}${settings.trackCount >= maxTracks ? " (max)" : ""}`}
+                value={trackCount}
+                display={`${trackCount}${trackCount >= maxTracks ? " (max)" : ""}`}
                 min={TRACK_COUNT_STEP}
                 max={maxTracks}
                 step={TRACK_COUNT_STEP}
@@ -409,6 +472,19 @@ export default function Lobby() {
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input
                   type="checkbox"
+                  checked={settings.showArtistHint}
+                  disabled={!isHost}
+                  onChange={(e) => updateSetting("showArtistHint", e.target.checked)}
+                  className="w-4 h-4 accent-accent disabled:opacity-60"
+                />
+                <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
+                  Indice sur l'artiste en cours de manche
+                </span>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
                   checked={settings.showHint}
                   disabled={!isHost}
                   onChange={(e) => updateSetting("showHint", e.target.checked)}
@@ -434,6 +510,10 @@ export default function Lobby() {
             </div>
           </div>
         </div>
+
+        {editingAvatar && (
+          <AvatarEditor value={profile.avatarSeed} onClose={() => setEditingAvatar(false)} onSave={saveAvatar} />
+        )}
 
         {error && <p className="mt-4 text-center text-red-500 text-sm">{error}</p>}
 

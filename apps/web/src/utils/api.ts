@@ -1,4 +1,4 @@
-import type { DeezerPlaylistMeta } from "@blindmusic/shared"
+import type { DeezerPlaylistMeta, GamePhase } from "@blindmusic/shared"
 
 const BASE = "/api"
 
@@ -39,6 +39,9 @@ export const api = {
       body: JSON.stringify({ playerName, avatarSeed }),
     }),
 
+  lobbyInfo: (code: string) =>
+    req<{ code: string; phase: GamePhase; playerCount: number }>(`/lobbies/${code}`),
+
   deezerPlaylist: (id: string) => req<DeezerPlaylistMeta>(`/deezer/playlists/${id}`),
 
   suggestPlaylist: (name: string, url: string) =>
@@ -51,6 +54,10 @@ export const api = {
 export function wsUrl(code: string, playerId: string): string {
   const proto = location.protocol === "https:" ? "wss" : "ws"
   return `${proto}://${location.host}/ws?code=${code}&playerId=${playerId}`
+}
+
+export function inviteUrl(code: string): string {
+  return `${location.origin}/join/${code}`
 }
 
 export function saveSession(code: string, playerId: string, playerName: string) {

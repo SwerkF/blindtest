@@ -1,9 +1,11 @@
 import {
+  ARTIST_HINT_AT,
   COUNTDOWN_MS,
   DISCONNECT_GRACE_MS,
   GamePhase,
   GuessMatch,
   HINT_AT,
+  HintKind,
   REVEAL_MS,
   type LobbySettings,
   type PlayedTrack,
@@ -47,8 +49,11 @@ interface Room {
   firstBothFoundBy: string | null
   /** Prefetched during the round so the reveal never waits on the network. */
   roundLyrics: string | null
-  hintTimer: ReturnType<typeof setTimeout> | null
+  hintTimers: ReturnType<typeof setTimeout>[]
 }
+
+/** Avatar strings carry the seed plus the customisation, see the web avatar codec. */
+const AVATAR_MAX_LENGTH = 160
 
 function newPlayer(
   id: string,
@@ -60,7 +65,7 @@ function newPlayer(
   return {
     id,
     name,
-    avatarSeed: avatarSeed.trim().slice(0, 80) || name,
+    avatarSeed: avatarSeed.trim().slice(0, AVATAR_MAX_LENGTH) || name,
     score: 0,
     hasFoundArtist: false,
     hasFoundTitle: false,
@@ -108,6 +113,21 @@ function toPublic(room: Room): PlayerPublic[] {
     hasFoundBoth: p.hasFoundBoth,
     connected: p.connected,
   }))
+}
+
+function lobbyUpdate(room: Room): WsServerMessage {
+  return {
+    type: "lobby:update",
+    players: toPublic(room),
+    settings: room.settings,
+    phase: room.phase,
+    hostId: room.hostId,
+  }
+}
+
+function clearHintTimers(room: Room) {
+  for (const timer of room.hintTimers) clearTimeout(timer)
+  room.hintTimers = []
 }
 
 // ponytail: O(n*m) Levenshtein, fine for song name lengths
@@ -194,7 +214,7 @@ export function createRoom(
     comboFoundCount: 0,
     firstBothFoundBy: null,
     roundLyrics: null,
-    hintTimer: null,
+    hintTimers: [],
   }
   room.players.set(hostId, newPlayer(hostId, hostName, avatarSeed, 0, send))
   rooms.set(code, room)
@@ -209,7 +229,8 @@ export function addPlayer(
   send: (msg: WsServerMessage) => void
 ): Room | null {
   const room = rooms.get(code)
-  if (!room || room.phase !== GamePhase.Lobby) return null
+  if (!room) return null
+  // Late joiners slot in mid-game: they start at zero and play from the current round
   room.players.set(
     playerId,
     newPlayer(playerId, playerName, avatarSeed, room.settings?.yearGuessAttempts ?? 2, send)
@@ -221,7 +242,7 @@ export function updateAvatar(code: string, playerId: string, avatarSeed: string)
   const room = rooms.get(code)
   const player = room?.players.get(playerId)
   if (!room || !player) return
-  const seed = avatarSeed.trim().slice(0, 80)
+  const seed = avatarSeed.trim().slice(0, AVATAR_MAX_LENGTH)
   if (!seed) return
   player.avatarSeed = seed
   broadcastLobby(code)
@@ -270,10 +291,13 @@ export function removePlayer(code: string, playerId: string) {
   room.players.delete(playerId)
   if (room.players.size === 0) {
     if (room.roundTimer) clearTimeout(room.roundTimer)
+    clearHintTimers(room)
     rooms.delete(code)
     return
   }
-  broadcast(room, { type: "lobby:update", players: toPublic(room), settings: room.settings, phase: room.phase })
+  // Hand the room over so it never ends up without anyone able to start a game
+  if (room.hostId === playerId) room.hostId = room.players.keys().next().value!
+  broadcast(room, lobbyUpdate(room))
 }
 
 /** Lets a reconnecting client resume mid-round instead of waiting for the next one. */
@@ -303,14 +327,14 @@ export function getPendingStart(code: string): number | null {
 export function broadcastLobby(code: string) {
   const room = rooms.get(code)
   if (!room) return
-  broadcast(room, { type: "lobby:update", players: toPublic(room), settings: room.settings, phase: room.phase })
+  broadcast(room, lobbyUpdate(room))
 }
 
 export function updateSettings(code: string, settings: LobbySettings) {
   const room = rooms.get(code)
   if (!room) return
   room.settings = settings
-  broadcast(room, { type: "lobby:update", players: toPublic(room), settings, phase: room.phase })
+  broadcast(room, lobbyUpdate(room))
 }
 
 export async function startGame(
@@ -320,13 +344,17 @@ export async function startGame(
   countdownMs: number = COUNTDOWN_MS
 ): Promise<boolean> {
   const room = rooms.get(code)
-  if (!room || room.phase !== GamePhase.Lobby) return false
+  // A finished game can be replayed straight from the lobby on the same code
+  if (!room || (room.phase !== GamePhase.Lobby && room.phase !== GamePhase.End)) return false
   if (tracks.length === 0) return false
   room.settings = settings
   room.tracks = tracks
   room.currentRoundIndex = 0
   room.roundStartedAt = 0
-  for (const p of room.players.values()) p.outcomes = []
+  for (const p of room.players.values()) {
+    p.score = 0
+    p.outcomes = []
+  }
   // Playing from the countdown onwards, so clients landing on the game page
   // during it are not bounced back to the lobby
   room.phase = GamePhase.Playing
@@ -372,11 +400,22 @@ function startRound(room: Room) {
   })
   room.roundTimer = setTimeout(() => endRound(room), s.roundDuration * 1000)
 
-  if (room.hintTimer) clearTimeout(room.hintTimer)
+  clearHintTimers(room)
+  const durationMs = s.roundDuration * 1000
+  if (s.showArtistHint) {
+    room.hintTimers.push(
+      setTimeout(
+        () => broadcast(room, { type: "round:hint", kind: HintKind.Artist, hint: buildHint(track.artist) }),
+        durationMs * ARTIST_HINT_AT
+      )
+    )
+  }
   if (s.showHint) {
-    room.hintTimer = setTimeout(
-      () => broadcast(room, { type: "round:hint", hint: buildHint(track.title) }),
-      s.roundDuration * 1000 * HINT_AT
+    room.hintTimers.push(
+      setTimeout(
+        () => broadcast(room, { type: "round:hint", kind: HintKind.Title, hint: buildHint(track.title) }),
+        durationMs * HINT_AT
+      )
     )
   }
 
@@ -406,10 +445,7 @@ function endRound(room: Room) {
     clearTimeout(room.roundTimer)
     room.roundTimer = null
   }
-  if (room.hintTimer) {
-    clearTimeout(room.hintTimer)
-    room.hintTimer = null
-  }
+  clearHintTimers(room)
 
   const track = room.tracks[room.currentRoundIndex]
   room.phase = GamePhase.Reveal
@@ -442,17 +478,28 @@ function endRound(room: Room) {
     if (room.currentRoundIndex >= room.tracks.length) {
       room.phase = GamePhase.End
       // The room stays alive so everyone can replay on the same code
-      broadcast(room, {
-        type: "game:end",
-        scores: scores(room),
-        playerNames: playerNames(room),
-        tracks: playedTracks(room),
-        outcomes: outcomes(room),
-      })
+      broadcast(room, endMessage(room))
     } else {
       startRound(room)
     }
   }, REVEAL_MS)
+}
+
+function endMessage(room: Room): WsServerMessage {
+  return {
+    type: "game:end",
+    scores: scores(room),
+    playerNames: playerNames(room),
+    tracks: playedTracks(room),
+    outcomes: outcomes(room),
+  }
+}
+
+/** Final recap for someone reconnecting after the last round. */
+export function getEndSummary(code: string): WsServerMessage | null {
+  const room = rooms.get(code)
+  if (!room || room.phase !== GamePhase.End) return null
+  return endMessage(room)
 }
 
 /** Sends everyone back to the lobby, keeping the room and its invite code. */
@@ -460,9 +507,8 @@ export function restartToLobby(code: string) {
   const room = rooms.get(code)
   if (!room) return
   if (room.roundTimer) clearTimeout(room.roundTimer)
-  if (room.hintTimer) clearTimeout(room.hintTimer)
+  clearHintTimers(room)
   room.roundTimer = null
-  room.hintTimer = null
   room.phase = GamePhase.Lobby
   room.tracks = []
   room.currentRoundIndex = 0
@@ -583,6 +629,17 @@ function guessYear(room: Room, player: PlayerState, track: Track, year: number):
     firstBoth: false,
     revealedArtist: undefined,
     revealedTitle: undefined,
+  }
+
+  // Re-sending the right year must not score again
+  if (player.hasFoundYear) {
+    return {
+      ...base,
+      matched: GuessMatch.YearAlreadyFound,
+      pointsEarned: 0,
+      yearGuessesLeft: player.yearGuessesLeft,
+      scores: scores(room),
+    }
   }
 
   if (player.yearGuessesLeft <= 0) {

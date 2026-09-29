@@ -6,6 +6,7 @@ import Suggest from "@/pages/Suggest"
 
 const router = createBrowserRouter([
   { path: "/", element: <Home /> },
+  { path: "/join/:code", element: <Home /> },
   { path: "/lobby/:code", element: <Lobby /> },
   { path: "/game/:code", element: <Game /> },
   { path: "/suggest", element: <Suggest /> },

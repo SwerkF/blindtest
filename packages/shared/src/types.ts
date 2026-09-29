@@ -16,6 +16,8 @@ export enum GuessMatch {
   Year = "year",
   YearWrong = "year_wrong",
   YearExhausted = "year_exhausted",
+  /** The year was already found this round: no extra points. */
+  YearAlreadyFound = "year_already_found",
 }
 
 export interface LobbySettings {
@@ -30,6 +32,8 @@ export interface LobbySettings {
   showLyrics: boolean
   /** Reveal the first letters of the title late in the round. */
   showHint: boolean
+  /** Reveal the first letters of the artist a bit earlier in the round. */
+  showArtistHint: boolean
 }
 
 export interface DeezerPlaylistMeta {
@@ -51,6 +55,13 @@ export const REVEAL_MS = 5000
 export const DISCONNECT_GRACE_MS = 15000
 /** Fraction of the round elapsed before the title hint appears. */
 export const HINT_AT = 0.8
+/** Fraction of the round elapsed before the artist hint appears. */
+export const ARTIST_HINT_AT = 0.6
+
+export enum HintKind {
+  Artist = "artist",
+  Title = "title",
+}
 
 export interface PlayerPublic {
   id: string
@@ -86,7 +97,13 @@ export interface PlayedTrack {
 }
 
 export type WsServerMessage =
-  | { type: "lobby:update"; players: PlayerPublic[]; settings: LobbySettings | null; phase: GamePhase }
+  | {
+      type: "lobby:update"
+      players: PlayerPublic[]
+      settings: LobbySettings | null
+      phase: GamePhase
+      hostId: string
+    }
   | { type: "game:start"; startsAt: number }
   | { type: "round:start"; round: RoundPublic }
   | {
@@ -104,7 +121,7 @@ export type WsServerMessage =
       revealedArtist?: string
       revealedTitle?: string
     }
-  | { type: "round:hint"; hint: string }
+  | { type: "round:hint"; kind: HintKind; hint: string }
   | {
       type: "round:reveal"
       artist: string
@@ -130,7 +147,6 @@ export type WsServerMessage =
 export type WsClientMessage =
   | { type: "lobby:settings"; settings: LobbySettings }
   | { type: "lobby:start"; settings: LobbySettings }
-  | { type: "lobby:restart" }
   | { type: "player:avatar"; avatarSeed: string }
   | { type: "guess"; text: string }
   | { type: "chat"; text: string }
