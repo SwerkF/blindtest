@@ -1,0 +1,7 @@
+# Local access, merged automatically by `docker compose up`. The base file only
+# exposes ports to the reverse proxy; bound to 127.0.0.1 so a server running
+# plain `docker compose up` does not publish anything to the outside.
+services:
+  web:
+    ports:
+      - "127.0.0.1:${WEB_PORT:-80}:80"
