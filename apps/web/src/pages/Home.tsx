@@ -8,6 +8,7 @@ import { useProfile } from "@/hooks/useProfile"
 import Avatar from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
+import LegalFooter from "@/components/LegalFooter"
 
 type Mode = "idle" | "create" | "join"
 
@@ -300,6 +301,7 @@ export default function Home() {
           </section>
         )}
       </div>
+      <LegalFooter className="mt-12" />
     </div>
   )
 }

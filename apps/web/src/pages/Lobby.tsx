@@ -33,6 +33,7 @@ import { api, clearSession, inviteUrl, loadSession, type PlaylistItem } from "@/
 import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
+import LegalFooter from "@/components/LegalFooter"
 
 const DEFAULT_SETTINGS: LobbySettings = {
   mode: GameMode.Classic,
@@ -699,6 +700,7 @@ export default function Lobby() {
             Recherche des génériques d'animés, la partie démarre dès que le premier est prêt.
           </p>
         )}
+        <LegalFooter className="mt-10" />
       </div>
     </div>
   )
