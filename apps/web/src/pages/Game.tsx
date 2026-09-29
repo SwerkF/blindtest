@@ -47,6 +47,7 @@ import Visualizer from "@/components/Visualizer"
 import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
+import Modal from "@/components/Modal"
 
 interface ChatMsg {
   id: number
@@ -254,6 +255,7 @@ export default function Game() {
   const [bubbles, setBubbles] = useState<Record<string, { emoji: Reaction; key: number }>>({})
   /** Emotes drifting up the stage for everyone to see. */
   const [floaters, setFloaters] = useState<Floater[]>([])
+  const [confirmLeave, setConfirmLeave] = useState(false)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const guessInputRef = useRef<HTMLInputElement>(null)
@@ -547,7 +549,7 @@ export default function Game() {
   }
 
   function leaveGame() {
-    if (!window.confirm("Quitter la partie ? Ton score sera perdu.")) return
+    setConfirmLeave(false)
     stopTyping()
     send({ type: "leave" })
     clearSession(code!)
@@ -642,7 +644,7 @@ export default function Game() {
           </p>
           <button
             type="button"
-            onClick={leaveGame}
+            onClick={() => setConfirmLeave(true)}
             className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
           >
             <SignOut size={14} weight="bold" />
@@ -1094,6 +1096,35 @@ export default function Game() {
 
       {editingAvatar && (
         <AvatarEditor value={profile.avatarSeed} onClose={() => setEditingAvatar(false)} onSave={saveAvatar} />
+      )}
+
+      {confirmLeave && (
+        <Modal
+          title="Quitter la partie ?"
+          onClose={() => setConfirmLeave(false)}
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmLeave(false)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-muted hover:text-ink hover:bg-edge/60 transition-colors"
+              >
+                Rester
+              </button>
+              <button
+                type="button"
+                onClick={leaveGame}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                <SignOut size={16} weight="bold" />
+                Quitter
+              </button>
+            </>
+          }
+        >
+          Tu quittes le salon et ton score de cette partie est perdu. Tu pourras revenir avec le code si l'hôte
+          accepte les nouveaux joueurs.
+        </Modal>
       )}
     </div>
   )
