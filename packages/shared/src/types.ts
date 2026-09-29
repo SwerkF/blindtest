@@ -26,11 +26,8 @@ export enum GuessMatch {
   YearAlreadyFound = "year_already_found",
   /** Anime mode: the anime the theme song belongs to. */
   Anime = "anime",
-  /** Anime mode: the theme number ("OP2", "ED1") bonus. */
-  Theme = "theme",
-  ThemeWrong = "theme_wrong",
-  ThemeExhausted = "theme_exhausted",
-  ThemeAlreadyFound = "theme_already_found",
+  /** Anime mode: the anime and its singer in the same guess. */
+  AnimeAndArtist = "anime_artist",
 }
 
 export enum ThemeType {
@@ -103,6 +100,13 @@ export const HINT_AT = 0.8
 /** Fraction of the round elapsed before the artist hint appears. */
 export const ARTIST_HINT_AT = 0.6
 
+/** Anime mode: finding the anime is worth this at the first second... */
+export const ANIME_MAX_POINTS = 20
+/** ...and shrinks linearly down to this at the buzzer. */
+export const ANIME_MIN_POINTS = 5
+/** Anime mode bonus for naming who sings the theme. */
+export const ANIME_ARTIST_POINTS = 5
+
 export enum HintKind {
   Artist = "artist",
   Title = "title",
@@ -132,8 +136,6 @@ export interface RoundOutcome {
   artist: boolean
   title: boolean
   year: boolean
-  /** Anime mode only: the theme number was found too. */
-  theme?: boolean
 }
 
 export interface PlayedTrack {
@@ -153,6 +155,8 @@ export type WsServerMessage =
       hostId: string
     }
   | { type: "game:start"; startsAt: number }
+  /** The host hit start and tracks are being fetched (can take a few seconds). */
+  | { type: "game:preparing"; active: boolean }
   | { type: "round:start"; round: RoundPublic }
   | {
       type: "guess:result"
@@ -163,7 +167,6 @@ export type WsServerMessage =
       scores: Record<string, number>
       firstBoth: boolean
       yearGuessesLeft: number
-      themeGuessesLeft: number
       /** Only echoed back to the author, so guesses never leak to opponents. */
       text?: string
       /** Only sent to the author, otherwise finding would spoil the answer. */

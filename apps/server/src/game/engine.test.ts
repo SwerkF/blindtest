@@ -43,7 +43,7 @@ async function room(code: string, players: string[]) {
   createRoom(code, players[0], players[0], players[0], collect)
   for (const p of players.slice(1)) addPlayer(code, p, p, p, collect)
   // No countdown in tests; the round still starts on a timer tick
-  await startGame(code, SETTINGS, [TRACK], 0)
+  await startGame(code, SETTINGS, [TRACK], { countdownMs: 0 })
   await Bun.sleep(5)
   return {
     inbox,

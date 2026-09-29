@@ -7,10 +7,16 @@ import { normalize, similarity } from "@/game/text"
  * Docs: https://api-docs.animethemes.moe — no auth, 90 requests per minute.
  */
 const API = "https://api.animethemes.moe"
+/** English, romaji and alternative titles (often French ones and abbreviations too). */
+const ANILIST_API = "https://graphql.anilist.co"
 
-/** Stay under the 90/min quota even when a game needs many lookups. */
-const MAX_LOOKUPS_PER_GAME = 70
+/** Stay under the AnimeThemes quota, shared by every game of the process. */
+const REQUESTS_PER_MINUTE = 80
 const LOOKUP_CONCURRENCY = 4
+/** Give up on playlists that are mostly not anime rather than scanning them whole. */
+const LOOKUPS_PER_TRACK = 6
+/** The first round starts as soon as one track is ready; the rest follows in batches. */
+const BATCH_SIZE = 5
 /** A Deezer title must be this close to the AnimeThemes song title. */
 const TITLE_MIN_SIMILARITY = 85
 /** Without an artist match, only long exact titles are trusted (covers, romaji credits). */
@@ -25,6 +31,11 @@ export interface AtImage {
   link: string
 }
 
+export interface AtResource {
+  site: string | null
+  external_id: number | null
+}
+
 export interface AtAnime {
   id: number
   name: string
@@ -32,6 +43,7 @@ export interface AtAnime {
   season: string | null
   animesynonyms?: { text: string | null }[]
   images?: AtImage[]
+  resources?: AtResource[]
 }
 
 export interface AtTheme {
@@ -50,7 +62,23 @@ export interface AtSong {
 
 class RateLimited extends Error {}
 
+// ponytail: in-process sliding window, one server instance
+const recentRequests: number[] = []
+
+async function throttle() {
+  for (;;) {
+    const now = Date.now()
+    while (recentRequests.length && now - recentRequests[0] > 60_000) recentRequests.shift()
+    if (recentRequests.length < REQUESTS_PER_MINUTE) {
+      recentRequests.push(now)
+      return
+    }
+    await Bun.sleep(60_000 - (now - recentRequests[0]) + 50)
+  }
+}
+
 async function fetchAt<T>(path: string): Promise<T> {
+  await throttle()
   const res = await fetch(`${API}${path}`, { headers: { Accept: "application/json" } })
   if (res.status === 429) throw new RateLimited()
   if (!res.ok) throw new Error(`AnimeThemes ${res.status} on ${path}`)
@@ -68,22 +96,64 @@ async function searchSongs(query: string): Promise<AtSong[]> {
   return data.search?.songs ?? []
 }
 
-/** Synonyms and cover art, in one request for the whole game. */
+/** Synonyms, cover art and external ids, in one request per batch. */
 async function fetchAnimeDetails(ids: number[]): Promise<Map<number, AtAnime>> {
   const out = new Map<number, AtAnime>()
   if (ids.length === 0) return out
   const params = new URLSearchParams({
     "filter[id]": ids.join(","),
-    include: "animesynonyms,images",
+    include: "animesynonyms,images,resources",
     "page[size]": "100",
   })
   try {
     const data = await fetchAt<{ anime?: AtAnime[] }>(`/anime?${params}`)
     for (const a of data.anime ?? []) out.set(a.id, a)
   } catch {
-    // Synonyms are a nice-to-have: canonical names still make the game playable
+    // Extra names are a nice-to-have: canonical names still make the game playable
   }
   return out
+}
+
+interface AniListMedia {
+  id: number
+  title?: { romaji?: string | null; english?: string | null; userPreferred?: string | null }
+  synonyms?: (string | null)[]
+}
+
+const ANILIST_QUERY = `query ($ids: [Int]) {
+  Page(perPage: 50) {
+    media(id_in: $ids, type: ANIME) { id title { romaji english userPreferred } synonyms }
+  }
+}`
+
+/** AniList id -> every title it knows for that anime. */
+async function fetchAniListTitles(ids: number[]): Promise<Map<number, string[]>> {
+  const out = new Map<number, string[]>()
+  if (ids.length === 0) return out
+  try {
+    const res = await fetch(ANILIST_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: ANILIST_QUERY, variables: { ids } }),
+    })
+    if (!res.ok) return out
+    const data = (await res.json()) as { data?: { Page?: { media?: AniListMedia[] } } }
+    for (const m of data.data?.Page?.media ?? []) {
+      const titles = [m.title?.english, m.title?.romaji, m.title?.userPreferred, ...(m.synonyms ?? [])]
+      out.set(
+        m.id,
+        titles.filter((t): t is string => Boolean(t?.trim()))
+      )
+    }
+  } catch {
+    // AniList down: AnimeThemes names and synonyms are still there
+  }
+  return out
+}
+
+function aniListId(anime: AtAnime): number | null {
+  const resource = anime.resources?.find((r) => r.site?.toLowerCase() === "anilist")
+  return resource?.external_id ?? null
 }
 
 const THEME_TYPES = new Set<string>(Object.values(ThemeType))
@@ -109,6 +179,14 @@ export function animeNameVariants(name: string): string[] {
   const beforeColon = name.split(":")[0].trim()
   if (beforeColon.length >= 4) variants.add(beforeColon)
   return [...variants].filter(Boolean)
+}
+
+/** "Shingeki no Kyojin" -> "snk", "My Hero Academia" -> "mha". */
+export function acronymOf(name: string): string | null {
+  const words = normalize(name).split(" ").filter(Boolean)
+  if (words.length < 2) return null
+  const acronym = words.map((w) => w[0]).join("")
+  return acronym.length >= 2 ? acronym : null
 }
 
 function artistMatches(song: AtSong, deezerArtist: string): boolean {
@@ -162,7 +240,12 @@ function coverOf(anime: AtAnime | undefined): string | null {
 }
 
 /** Folds a matched song into what the game needs: accepted answers and the reveal card. */
-export function buildMatch(song: AtSong, details: Map<number, AtAnime>): AnimeMatch | null {
+export function buildMatch(
+  song: AtSong,
+  details: Map<number, AtAnime>,
+  aniListTitles: Map<number, string[]> = new Map(),
+  deezerArtist?: string
+): AnimeMatch | null {
   const themes = (song.animethemes ?? []).filter((t) => t.anime && toTheme(t))
   if (themes.length === 0) return null
 
@@ -179,16 +262,36 @@ export function buildMatch(song: AtSong, details: Map<number, AtAnime>): AnimeMa
   )
   const primary = entries[0]
 
-  const names = new Set<string>()
+  const titles: string[] = []
   for (const { anime } of entries) {
-    for (const v of animeNameVariants(anime.name)) names.add(v)
-    for (const syn of anime.animesynonyms ?? []) {
-      if (syn.text) for (const v of animeNameVariants(syn.text)) names.add(v)
-    }
+    titles.push(anime.name)
+    for (const syn of anime.animesynonyms ?? []) if (syn.text) titles.push(syn.text)
+    const id = aniListId(anime)
+    if (id !== null) titles.push(...(aniListTitles.get(id) ?? []))
   }
 
+  const names = new Set<string>()
+  const acronyms = new Set<string>()
+  for (const title of titles) {
+    for (const v of animeNameVariants(title)) {
+      if (normalize(v).length > 0) names.add(v)
+      const acronym = acronymOf(v)
+      if (acronym) acronyms.add(acronym)
+    }
+  }
+  // An abbreviation spelled out as a synonym ("SnK", "JJK") is an acronym too
+  for (const name of names) {
+    const compact = normalize(name).replace(/\s/g, "")
+    if (compact.length >= 2 && compact.length <= 5) acronyms.add(compact)
+  }
+
+  const artists = new Set((song.artists ?? []).map((a) => a.name).filter(Boolean))
+  if (deezerArtist) artists.add(deezerArtist)
+
   return {
-    names: [...names].filter((n) => normalize(n).length > 0),
+    names: [...names],
+    acronyms: [...acronyms],
+    artists: [...artists],
     reveal: {
       name: primary.anime.name,
       themes: primary.themes,
@@ -213,40 +316,66 @@ async function lookupSong(track: Track): Promise<AtSong | null> {
   return found
 }
 
-/**
- * Keeps only the pool tracks that are known anime themes, up to `count`, and
- * attaches the anime to guess. The anime premiere year replaces Deezer's.
- */
-export async function pickAnimeTracks(pool: Track[], count: number): Promise<Track[]> {
-  const matched: { track: Track; song: AtSong }[] = []
-  let cursor = 0
-  let lookups = 0
-  let blocked = false
-
-  async function worker() {
-    while (!blocked && matched.length < count && cursor < pool.length) {
-      const track = pool[cursor++]
-      const cached = songCache.has(track.id)
-      if (!cached && lookups >= MAX_LOOKUPS_PER_GAME) return
-      if (!cached) lookups++
-      try {
-        const song = await lookupSong(track)
-        if (song && matched.length < count) matched.push({ track, song })
-      } catch (err) {
-        if (err instanceof RateLimited) blocked = true
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: LOOKUP_CONCURRENCY }, worker))
-
+/** Resolves every name of the batch's anime and turns the matches into playable tracks. */
+async function enrich(matched: { track: Track; song: AtSong }[]): Promise<Track[]> {
   const animeIds = new Set<number>()
   for (const { song } of matched) {
     for (const t of song.animethemes ?? []) if (t.anime) animeIds.add(t.anime.id)
   }
   const details = await fetchAnimeDetails([...animeIds].slice(0, 100))
+  const aniListIds = [...details.values()].map(aniListId).filter((id): id is number => id !== null)
+  const aniListTitles = await fetchAniListTitles(aniListIds)
 
   return matched.flatMap(({ track, song }) => {
-    const anime = buildMatch(song, details)
+    const anime = buildMatch(song, details, aniListTitles, track.artist)
     return anime ? [{ ...track, year: anime.reveal.year ?? 0, anime }] : []
   })
+}
+
+/**
+ * Keeps only the pool tracks that are known anime themes, up to `count`, and
+ * hands them over as they are ready: the first one alone so the game can start
+ * right away, then in batches. `onTracks` returns false once nobody needs more
+ * (game restarted, room closed). The anime premiere year replaces Deezer's.
+ */
+export async function streamAnimeTracks(
+  pool: Track[],
+  count: number,
+  onTracks: (tracks: Track[]) => boolean | Promise<boolean>
+): Promise<void> {
+  const maxLookups = count * LOOKUPS_PER_TRACK
+  let cursor = 0
+  let lookups = 0
+  let delivered = 0
+  let blocked = false
+  let wanted = true
+
+  async function nextMatches(size: number): Promise<{ track: Track; song: AtSong }[]> {
+    const matched: { track: Track; song: AtSong }[] = []
+    async function worker() {
+      while (!blocked && matched.length < size && cursor < pool.length) {
+        const track = pool[cursor++]
+        const cached = songCache.has(track.id)
+        if (!cached && lookups >= maxLookups) return
+        if (!cached) lookups++
+        try {
+          const song = await lookupSong(track)
+          if (song && matched.length < size) matched.push({ track, song })
+        } catch (err) {
+          if (err instanceof RateLimited) blocked = true
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(LOOKUP_CONCURRENCY, size + 1) }, worker))
+    return matched
+  }
+
+  while (wanted && delivered < count) {
+    const size = delivered === 0 ? 1 : Math.min(BATCH_SIZE, count - delivered)
+    const matched = await nextMatches(size)
+    if (matched.length === 0) return
+    const tracks = await enrich(matched)
+    delivered += tracks.length
+    if (tracks.length) wanted = await onTracks(tracks)
+  }
 }

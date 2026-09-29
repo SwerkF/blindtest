@@ -13,7 +13,6 @@ import {
   ArrowCounterClockwise,
   Microphone,
   Television,
-  Hash,
 } from "@phosphor-icons/react"
 import type {
   AnimeReveal,
@@ -24,7 +23,16 @@ import type {
   RoundPublic,
   WsServerMessage,
 } from "@blindmusic/shared"
-import { GameMode, GamePhase, GuessMatch, HintKind, themeLabel } from "@blindmusic/shared"
+import {
+  ANIME_ARTIST_POINTS,
+  ANIME_MAX_POINTS,
+  ANIME_MIN_POINTS,
+  GameMode,
+  GamePhase,
+  GuessMatch,
+  HintKind,
+  themeLabel,
+} from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
 import { loadSession } from "@/utils/api"
@@ -78,10 +86,12 @@ const MATCH_LABEL: Record<GuessMatch, string> = {
   [GuessMatch.YearExhausted]: "Plus d'essais pour l'année",
   [GuessMatch.YearAlreadyFound]: "Année déjà trouvée",
   [GuessMatch.Anime]: "Animé trouvé",
-  [GuessMatch.Theme]: "Bon générique",
-  [GuessMatch.ThemeWrong]: "Mauvais générique",
-  [GuessMatch.ThemeExhausted]: "Plus d'essais pour le générique",
-  [GuessMatch.ThemeAlreadyFound]: "Générique déjà trouvé",
+  [GuessMatch.AnimeAndArtist]: "Animé + auteur",
+}
+
+function matchLabel(matched: GuessMatch, anime: boolean): string {
+  if (anime && matched === GuessMatch.Artist) return "Auteur trouvé"
+  return MATCH_LABEL[matched]
 }
 
 /** "Opening 1 · Printemps 2019" style caption under an anime name. */
@@ -100,17 +110,13 @@ function GuessIcon({ matched }: { matched: GuessMatch }) {
     case GuessMatch.YearWrong:
     case GuessMatch.YearExhausted:
     case GuessMatch.YearAlreadyFound:
-    case GuessMatch.ThemeWrong:
-    case GuessMatch.ThemeExhausted:
-    case GuessMatch.ThemeAlreadyFound:
       return <XCircle size={16} className="text-muted shrink-0" />
     case GuessMatch.Close:
       return <TrendUp size={16} weight="bold" className="text-amber-500 shrink-0" />
     case GuessMatch.Year:
       return <Calendar size={16} weight="fill" className="text-accent shrink-0" />
-    case GuessMatch.Theme:
-      return <Hash size={16} weight="bold" className="text-accent shrink-0" />
     case GuessMatch.Anime:
+    case GuessMatch.AnimeAndArtist:
     case GuessMatch.Artist:
     case GuessMatch.Title:
     case GuessMatch.Both:
@@ -127,8 +133,10 @@ function outcomeStyle(o: RoundOutcome | undefined, anime = false) {
   if (!o) return { cls: "bg-edge/60 text-transparent", label: "À venir", glyph: "" }
   const both = o.artist && o.title
   if (anime) {
-    if (both && (o.theme || o.year)) return { cls: "bg-blue-500 text-white", label: "Animé + bonus", glyph: "✓" }
-    if (both) return { cls: "bg-green-500 text-white", label: "Animé trouvé", glyph: "✓" }
+    // title carries the anime, artist the singer bonus
+    if (both) return { cls: "bg-blue-500 text-white", label: "Animé + auteur", glyph: "✓" }
+    if (o.title) return { cls: "bg-green-500 text-white", label: "Animé trouvé", glyph: "✓" }
+    if (o.artist) return { cls: "bg-lime-400 text-lime-950", label: "Auteur seulement", glyph: "~" }
     return { cls: "bg-red-400/80 text-white", label: "Rien trouvé", glyph: "✕" }
   }
   if (both && o.year) return { cls: "bg-blue-500 text-white", label: "Tout trouvé", glyph: "✓" }
@@ -174,8 +182,6 @@ export default function Game() {
   const [chatInput, setChatInput] = useState("")
   const [guessInput, setGuessInput] = useState("")
   const [yearGuessesLeft, setYearGuessesLeft] = useState(0)
-  const [themeGuessesLeft, setThemeGuessesLeft] = useState(0)
-  const [hasFoundTheme, setHasFoundTheme] = useState(false)
   const [endState, setEndState] = useState<EndState | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -235,8 +241,6 @@ export default function Game() {
           setGuessInput("")
           setPhase(GamePhase.Playing)
           setYearGuessesLeft(settingsRef.current?.yearGuessAttempts ?? 0)
-          setThemeGuessesLeft(settingsRef.current?.yearGuessAttempts ?? 0)
-          setHasFoundTheme(false)
           // Clear the per-round found markers; the server already reset them
           setPlayers((prev) =>
             prev.map((p) => ({ ...p, hasFoundArtist: false, hasFoundTitle: false, hasFoundBoth: false }))
@@ -259,12 +263,18 @@ export default function Game() {
                       p.hasFoundArtist ||
                       msg.matched === GuessMatch.Artist ||
                       msg.matched === GuessMatch.Both ||
-                      msg.matched === GuessMatch.Anime,
+                      msg.matched === GuessMatch.AnimeAndArtist,
                     hasFoundTitle:
                       p.hasFoundTitle ||
                       msg.matched === GuessMatch.Title ||
                       msg.matched === GuessMatch.Both ||
-                      msg.matched === GuessMatch.Anime,
+                      msg.matched === GuessMatch.Anime ||
+                      msg.matched === GuessMatch.AnimeAndArtist,
+                    hasFoundBoth:
+                      p.hasFoundBoth ||
+                      msg.matched === GuessMatch.Both ||
+                      msg.matched === GuessMatch.Anime ||
+                      msg.matched === GuessMatch.AnimeAndArtist,
                   }
                 : p
             )
@@ -272,8 +282,6 @@ export default function Game() {
 
           if (msg.playerId === session?.playerId && msg.text !== undefined) {
             setYearGuessesLeft(msg.yearGuessesLeft)
-            setThemeGuessesLeft(msg.themeGuessesLeft)
-            if (msg.matched === GuessMatch.Theme) setHasFoundTheme(true)
             setGuesses((prev) => [
               ...prev,
               { id: idRef.current++, text: msg.text!, matched: msg.matched, points: msg.pointsEarned },
@@ -283,7 +291,12 @@ export default function Game() {
             else if (msg.revealedArtist && msg.revealedTitle) {
               setMyFind(`${msg.revealedTitle} — ${msg.revealedArtist}`)
             }
-            if (msg.firstBoth || msg.matched === GuessMatch.Both || msg.matched === GuessMatch.Anime) {
+            if (
+              msg.firstBoth ||
+              msg.matched === GuessMatch.Both ||
+              msg.matched === GuessMatch.Anime ||
+              msg.matched === GuessMatch.AnimeAndArtist
+            ) {
               playCue(Cue.Complete)
             }
             else if (msg.pointsEarned > 0) playCue(Cue.Match)
@@ -434,29 +447,18 @@ export default function Game() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ink text-sm truncate">{p.name}</p>
                 <div className="flex gap-1 mt-1">
-                  {isAnime ? (
-                    <span
-                      className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                        p.hasFoundBoth ? "bg-accent" : "bg-edge"
-                      }`}
-                      title="Animé"
-                    />
-                  ) : (
-                    <>
-                      <span
-                        className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                          p.hasFoundArtist ? "bg-accent" : "bg-edge"
-                        }`}
-                        title="Artiste"
-                      />
-                      <span
-                        className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                          p.hasFoundTitle ? "bg-accent" : "bg-edge"
-                        }`}
-                        title="Titre"
-                      />
-                    </>
-                  )}
+                  <span
+                    className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+                      (isAnime ? p.hasFoundTitle : p.hasFoundArtist) ? "bg-accent" : "bg-edge"
+                    }`}
+                    title={isAnime ? "Animé" : "Artiste"}
+                  />
+                  <span
+                    className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+                      (isAnime ? p.hasFoundArtist : p.hasFoundTitle) ? "bg-accent" : "bg-edge"
+                    }`}
+                    title={isAnime ? "Auteur" : "Titre"}
+                  />
                 </div>
               </div>
               <span className="font-bold text-ink text-lg tabular-nums">{scores[p.id] ?? 0}</span>
@@ -609,7 +611,11 @@ export default function Game() {
                 )}
                 {phase === GamePhase.Reveal && reveal && (
                   <span className="text-sm text-muted tabular-nums">
-                    {reveal.isLast ? "Scores finaux…" : `Suivante dans ${revealLeft}s`}
+                    {reveal.isLast
+                      ? "Scores finaux…"
+                      : revealLeft > 0
+                        ? `Suivante dans ${revealLeft}s`
+                        : "Chargement de la suivante…"}
                   </span>
                 )}
               </div>
@@ -698,7 +704,7 @@ export default function Game() {
                           <>
                             <p className="text-muted text-sm">De quel animé vient ce générique ?</p>
                             <p className="text-muted/70 text-xs mt-1">
-                              Bonus : « OP2 », « ED1 » pour le numéro, ou l'année de diffusion.
+                              Plus tu es rapide, plus ça rapporte. Bonus : l'auteur du générique ou l'année.
                             </p>
                           </>
                         ) : (
@@ -744,7 +750,7 @@ export default function Game() {
                               <span
                                 className={`text-xs truncate ${warm ? "text-amber-600 font-medium" : "text-muted"}`}
                               >
-                                {MATCH_LABEL[g.matched]}
+                                {matchLabel(g.matched, isAnime)}
                               </span>
                             </div>
                           )
@@ -762,13 +768,9 @@ export default function Game() {
                   {hints[HintKind.Artist] && (
                     <div
                       className="flex items-center gap-2 animate-rise"
-                      title={isAnime ? "Saison de diffusion" : "Indice artiste"}
+                      title="Indice artiste"
                     >
-                      {isAnime ? (
-                        <Calendar size={15} weight="fill" className="text-amber-500" />
-                      ) : (
-                        <Microphone size={15} weight="fill" className="text-amber-500" />
-                      )}
+                      <Microphone size={15} weight="fill" className="text-amber-500" />
                       <span className="font-mono font-bold text-ink tracking-[0.25em]">{hints[HintKind.Artist]}</span>
                     </div>
                   )}
@@ -793,7 +795,7 @@ export default function Game() {
                   value={guessInput}
                   onChange={(e) => setGuessInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && submitGuess()}
-                  placeholder={isAnime ? "Nom de l'animé, OP/ED ou année…" : "Artiste, titre ou année…"}
+                  placeholder={isAnime ? "Nom de l'animé, auteur ou année…" : "Artiste, titre ou année…"}
                   disabled={!canGuess}
                   className="flex-1 min-w-0 border border-edge bg-surface rounded-xl px-4 py-3 text-ink focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
                 />
@@ -808,15 +810,8 @@ export default function Game() {
               <div className="flex gap-4 mt-2 text-xs text-muted">
                 {isAnime ? (
                   <>
-                    <span>Animé {me?.hasFoundBoth ? "✓" : "— 20 pts"}</span>
-                    <span>
-                      N° générique —{" "}
-                      {hasFoundTheme
-                        ? "✓"
-                        : themeGuessesLeft > 0
-                          ? `${themeGuessesLeft} essai${themeGuessesLeft > 1 ? "s" : ""}`
-                          : "épuisés"}
-                    </span>
+                    <span>Animé {me?.hasFoundTitle ? "✓" : `— ${ANIME_MAX_POINTS} à ${ANIME_MIN_POINTS} pts`}</span>
+                    <span>Auteur {me?.hasFoundArtist ? "✓" : `— ${ANIME_ARTIST_POINTS} pts`}</span>
                   </>
                 ) : (
                   <>

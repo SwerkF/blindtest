@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useNavigate, Navigate } from "react-router-dom"
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query"
-import { Users, Play, Copy, Check, MusicNotes, ShareNetwork, X, Television } from "@phosphor-icons/react"
+import { Users, Play, Copy, Check, MusicNotes, ShareNetwork, X, Television, CircleNotch } from "@phosphor-icons/react"
 import {
   GameMode,
   GamePhase,
@@ -62,6 +62,8 @@ export default function Lobby() {
   const [playlistUrl, setPlaylistUrl] = useState("")
   const [addingPlaylist, setAddingPlaylist] = useState(false)
   const [editingAvatar, setEditingAvatar] = useState(false)
+  /** The host started the game and the server is fetching the tracks. */
+  const [preparing, setPreparing] = useState(false)
   /** The server has no settings yet and the host has to publish the initial ones. */
   const [needsInitialSync, setNeedsInitialSync] = useState(false)
   const { profile, setAvatar } = useProfile()
@@ -148,8 +150,13 @@ export default function Lobby() {
           // The game page picks the countdown back up from the same timestamp
           navigate(`/game/${code}`)
           break
+        case "game:preparing":
+          setPreparing(msg.active)
+          if (msg.active) setError("")
+          break
         case "error":
           setError(msg.message)
+          setPreparing(false)
           break
         default:
           break
@@ -233,7 +240,7 @@ export default function Lobby() {
   }
 
   function handleStart() {
-    if (!playlistCount()) return
+    if (!playlistCount() || preparing) return
     setError("")
     send({ type: "lobby:start", settings: { ...settingsRef.current, trackCount } })
   }
@@ -342,8 +349,8 @@ export default function Lobby() {
           </div>
           {isAnime && (
             <p className="mt-2 text-xs text-muted">
-              Seuls les titres reconnus comme opening ou ending sur AnimeThemes sont joués. Bonus : tape « OP2 »
-              ou « ED1 » pour le numéro du générique.
+              Seuls les titres reconnus comme opening ou ending sur AnimeThemes sont joués. Noms japonais, anglais,
+              français et abréviations acceptés ; plus tu trouves vite, plus ça rapporte. Bonus pour l'auteur.
             </p>
           )}
         </section>
@@ -525,7 +532,7 @@ export default function Lobby() {
                 onChange={(v) => updateSetting("maxErrorPercent", v)}
               />
               <Setting
-                label={isAnime ? "Essais bonus (année / n° d'opening)" : "Essais année"}
+                label="Essais année"
                 value={settings.yearGuessAttempts}
                 display={String(settings.yearGuessAttempts)}
                 min={0}
@@ -535,18 +542,21 @@ export default function Lobby() {
                 onChange={(v) => updateSetting("yearGuessAttempts", v)}
               />
 
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={settings.showArtistHint}
-                  disabled={!isHost}
-                  onChange={(e) => updateSetting("showArtistHint", e.target.checked)}
-                  className="w-4 h-4 accent-accent disabled:opacity-60"
-                />
-                <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
-                  {isAnime ? "Indice sur la saison de diffusion" : "Indice sur l'artiste en cours de manche"}
-                </span>
-              </label>
+              {/* Anime mode has no early hint: it would give the airing year away */}
+              {!isAnime && (
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={settings.showArtistHint}
+                    disabled={!isHost}
+                    onChange={(e) => updateSetting("showArtistHint", e.target.checked)}
+                    className="w-4 h-4 accent-accent disabled:opacity-60"
+                  />
+                  <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
+                    Indice sur l'artiste en cours de manche
+                  </span>
+                </label>
+              )}
 
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input
@@ -586,14 +596,26 @@ export default function Lobby() {
         {isHost ? (
           <button
             onClick={handleStart}
-            disabled={!playlistCount()}
+            disabled={!playlistCount() || preparing}
             className="mt-6 w-full flex items-center justify-center gap-3 bg-inverse text-inverse-ink py-4 rounded-2xl font-bold text-lg hover:opacity-90 transition-opacity disabled:opacity-40"
           >
-            <Play size={22} weight="fill" />
-            Lancer la partie
+            {preparing ? (
+              <CircleNotch size={22} weight="bold" className="animate-spin" />
+            ) : (
+              <Play size={22} weight="fill" />
+            )}
+            {preparing ? "Préparation de la partie…" : "Lancer la partie"}
           </button>
         ) : (
-          <p className="mt-6 text-center text-muted text-sm">En attente que l'hôte lance la partie…</p>
+          <p className="mt-6 text-center text-muted text-sm flex items-center justify-center gap-2">
+            {preparing && <CircleNotch size={16} weight="bold" className="animate-spin" />}
+            {preparing ? "Préparation de la partie…" : "En attente que l'hôte lance la partie…"}
+          </p>
+        )}
+        {preparing && isAnime && (
+          <p className="mt-2 text-center text-xs text-muted">
+            Recherche des génériques d'animés, la partie démarre dès que le premier est prêt.
+          </p>
         )}
       </div>
     </div>
