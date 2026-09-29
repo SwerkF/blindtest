@@ -10,12 +10,11 @@ export function useProfile() {
     saveProfile(next)
   }
 
-  const reroll = () => {
-    const next = { ...profile, avatarSeed: crypto.randomUUID() }
+  const setAvatar = (avatarSeed: string) => {
+    const next = { ...profile, avatarSeed }
     setProfile(next)
     saveProfile(next)
-    return next.avatarSeed
   }
 
-  return { profile, setName, reroll }
+  return { profile, setName, setAvatar }
 }

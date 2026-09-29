@@ -69,6 +69,7 @@ a1.ws.send(
       yearGuessAttempts: 2,
       showLyrics: true,
       showHint: true,
+      showArtistHint: true,
     },
   })
 )

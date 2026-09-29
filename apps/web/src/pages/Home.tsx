@@ -1,10 +1,12 @@
-import { useState } from "react"
-import { useNavigate, Link } from "react-router-dom"
-import { MusicNote, ArrowRight, Link as LinkIcon, Shuffle } from "@phosphor-icons/react"
-import { api, saveSession } from "@/utils/api"
+import { useEffect, useState } from "react"
+import { useNavigate, useParams, Link } from "react-router-dom"
+import { MusicNote, ArrowRight, Link as LinkIcon, PaintBrush } from "@phosphor-icons/react"
+import { api, loadSession, saveSession } from "@/utils/api"
 import { loadHistory, type GameHistoryEntry } from "@/utils/storage"
+import { GamePhase } from "@blindmusic/shared"
 import { useProfile } from "@/hooks/useProfile"
 import Avatar from "@/components/Avatar"
+import AvatarEditor from "@/components/AvatarEditor"
 import ThemeToggle from "@/components/ThemeToggle"
 
 type Mode = "idle" | "create" | "join"
@@ -25,12 +27,36 @@ function formatPlayedAt(playedAt: number): string {
 
 export default function Home() {
   const navigate = useNavigate()
-  const { profile, setName, reroll } = useProfile()
+  // Set when arriving from an invite link (/join/:code)
+  const { code: invitedCode } = useParams<{ code: string }>()
+  const { profile, setName, setAvatar } = useProfile()
   const [history] = useState<GameHistoryEntry[]>(loadHistory)
-  const [mode, setMode] = useState<Mode>("idle")
-  const [code, setCode] = useState("")
+  const [mode, setMode] = useState<Mode>(invitedCode ? "join" : "idle")
+  const [code, setCode] = useState((invitedCode ?? "").toUpperCase())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [editingAvatar, setEditingAvatar] = useState(false)
+  const [inviteInfo, setInviteInfo] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!invitedCode) return
+    const upper = invitedCode.toUpperCase()
+    // Already in this room in this tab: skip straight back to it
+    if (loadSession(upper)) {
+      navigate(`/lobby/${upper}`, { replace: true })
+      return
+    }
+    api
+      .lobbyInfo(upper)
+      .then((info) =>
+        setInviteInfo(
+          info.phase === GamePhase.Lobby
+            ? `${info.playerCount} joueur${info.playerCount > 1 ? "s" : ""} dans le salon`
+            : "Partie en cours, tu rejoins en direct"
+        )
+      )
+      .catch((caught: unknown) => setError(errorMessage(caught)))
+  }, [invitedCode, navigate])
 
   async function handleCreate() {
     if (!profile.name.trim()) return setError("Entre ton pseudo")
@@ -113,6 +139,7 @@ export default function Home() {
               onClick={() => {
                 setMode("idle")
                 setError("")
+                if (invitedCode) navigate("/", { replace: true })
               }}
               className="text-muted text-sm mb-6 hover:text-ink transition-colors"
             >
@@ -123,15 +150,27 @@ export default function Home() {
               {mode === "create" ? "Créer une partie" : "Rejoindre une partie"}
             </h2>
 
+            {mode === "join" && invitedCode && (
+              <p className="-mt-3 mb-6 text-sm text-muted">
+                Invitation au salon <span className="font-mono font-bold text-ink">{code}</span>
+                {inviteInfo ? ` · ${inviteInfo}` : ""}
+              </p>
+            )}
+
             <div className="flex flex-col items-center gap-3 mb-6">
-              <Avatar name={profile.avatarSeed} size={160} onReroll={reroll} />
+              <Avatar
+                name={profile.avatarSeed}
+                size={160}
+                animate="always"
+                onEdit={() => setEditingAvatar(true)}
+              />
               <button
                 type="button"
-                onClick={reroll}
+                onClick={() => setEditingAvatar(true)}
                 className="flex items-center gap-1.5 text-sm text-muted hover:text-accent transition-colors"
               >
-                <Shuffle size={16} />
-                Changer d'avatar
+                <PaintBrush size={16} />
+                Personnaliser l'avatar
               </button>
             </div>
 
@@ -149,7 +188,7 @@ export default function Home() {
                 />
               </div>
 
-              {mode === "join" && (
+              {mode === "join" && !invitedCode && (
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">Code du salon</label>
                   <input
@@ -175,6 +214,17 @@ export default function Home() {
               </button>
             </div>
           </div>
+        )}
+
+        {editingAvatar && (
+          <AvatarEditor
+            value={profile.avatarSeed}
+            onClose={() => setEditingAvatar(false)}
+            onSave={(avatar) => {
+              setAvatar(avatar)
+              setEditingAvatar(false)
+            }}
+          />
         )}
 
         {history.length > 0 && (

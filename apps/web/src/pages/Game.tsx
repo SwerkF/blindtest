@@ -11,6 +11,7 @@ import {
   Lightbulb,
   TrendUp,
   ArrowCounterClockwise,
+  Microphone,
 } from "@phosphor-icons/react"
 import type {
   LobbySettings,
@@ -20,7 +21,7 @@ import type {
   RoundPublic,
   WsServerMessage,
 } from "@blindmusic/shared"
-import { GamePhase, GuessMatch } from "@blindmusic/shared"
+import { GamePhase, GuessMatch, HintKind } from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
 import { loadSession } from "@/utils/api"
@@ -28,6 +29,7 @@ import { appendHistory } from "@/utils/storage"
 import { Cue, playCue } from "@/utils/audio"
 import Visualizer from "@/components/Visualizer"
 import Avatar from "@/components/Avatar"
+import AvatarEditor from "@/components/AvatarEditor"
 import ThemeToggle from "@/components/ThemeToggle"
 
 interface ChatMsg {
@@ -70,6 +72,7 @@ const MATCH_LABEL: Record<GuessMatch, string> = {
   [GuessMatch.Year]: "Bonne année",
   [GuessMatch.YearWrong]: "Mauvaise année",
   [GuessMatch.YearExhausted]: "Plus d'essais pour l'année",
+  [GuessMatch.YearAlreadyFound]: "Année déjà trouvée",
 }
 
 function secondsUntil(target: number, now: number): number {
@@ -81,6 +84,7 @@ function GuessIcon({ matched }: { matched: GuessMatch }) {
     case GuessMatch.None:
     case GuessMatch.YearWrong:
     case GuessMatch.YearExhausted:
+    case GuessMatch.YearAlreadyFound:
       return <XCircle size={16} className="text-muted shrink-0" />
     case GuessMatch.Close:
       return <TrendUp size={16} weight="bold" className="text-amber-500 shrink-0" />
@@ -124,7 +128,8 @@ export default function Game() {
   const navigate = useNavigate()
   const session = loadSession(code!)
   const { send, onMessage, connected } = useWs(code ?? "", session?.playerId ?? "")
-  const { reroll } = useProfile()
+  const { profile, setAvatar } = useProfile()
+  const [editingAvatar, setEditingAvatar] = useState(false)
 
   const [phase, setPhase] = useState<GamePhase>(GamePhase.Playing)
   const [settings, setSettings] = useState<LobbySettings | null>(null)
@@ -134,7 +139,7 @@ export default function Game() {
   const [round, setRound] = useState<RoundPublic | null>(null)
   const [seekTo, setSeekTo] = useState(0)
   const [reveal, setReveal] = useState<RevealState | null>(null)
-  const [hint, setHint] = useState<string | null>(null)
+  const [hints, setHints] = useState<Partial<Record<HintKind, string>>>({})
   const [foundBy, setFoundBy] = useState<string | null>(null)
   const [myFind, setMyFind] = useState<{ artist: string; title: string } | null>(null)
   const [countdownTo, setCountdownTo] = useState<number | null>(null)
@@ -151,6 +156,8 @@ export default function Game() {
   const idRef = useRef(0)
   const settingsRef = useRef<LobbySettings | null>(null)
   const historySaved = useRef(false)
+  /** Only games followed live end up in the history, not a recap seen after a refresh. */
+  const playedLive = useRef(false)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 200)
@@ -171,7 +178,7 @@ export default function Game() {
             settingsRef.current = msg.settings
             setSettings(msg.settings)
           }
-          // A restart drops the room back to the lobby
+          // Nothing has started in this room yet
           if (msg.phase === GamePhase.Lobby) navigate(`/lobby/${code}`)
           break
 
@@ -179,6 +186,11 @@ export default function Game() {
           setCountdownTo(msg.startsAt)
           setEndState(null)
           setOutcomes({})
+          setScores({})
+          setReveal(null)
+          setRound(null)
+          setPhase(GamePhase.Playing)
+          historySaved.current = false
           playCue(Cue.Countdown)
           break
 
@@ -187,7 +199,8 @@ export default function Game() {
           setSeekTo(Math.max(0, (Date.now() - msg.round.startedAt) / 1000))
           setCountdownTo(null)
           setReveal(null)
-          setHint(null)
+          setHints({})
+          playedLive.current = true
           setFoundBy(null)
           setMyFind(null)
           setGuesses([])
@@ -201,7 +214,7 @@ export default function Game() {
           break
 
         case "round:hint":
-          setHint(msg.hint)
+          setHints((prev) => ({ ...prev, [msg.kind]: msg.hint }))
           break
 
         case "guess:result":
@@ -264,7 +277,7 @@ export default function Game() {
           setOutcomes(msg.outcomes)
           setScores(msg.scores)
           setPhase(GamePhase.End)
-          if (!historySaved.current && session && code) {
+          if (!historySaved.current && playedLive.current && session && code) {
             historySaved.current = true
             const ranking = Object.entries(msg.scores).sort((a, b) => b[1] - a[1])
             const place = ranking.findIndex(([id]) => id === session.playerId) + 1
@@ -294,7 +307,7 @@ export default function Game() {
   const countdownLeft = countdownTo ? secondsUntil(countdownTo, now) : 0
   const revealLeft = reveal ? secondsUntil(reveal.nextAt, now) : 0
   const isCountdown = countdownTo !== null && countdownLeft > 0
-  const canGuess = phase === GamePhase.Playing && !isCountdown
+  const canGuess = phase === GamePhase.Playing && !isCountdown && round !== null
 
   const me = players.find((p) => p.id === session?.playerId)
   const myOutcomes = session ? (outcomes[session.playerId] ?? []) : []
@@ -309,14 +322,16 @@ export default function Game() {
     if (canGuess) guessInputRef.current?.focus()
   }, [canGuess])
 
-  function handleReroll() {
-    const avatarSeed = reroll()
+  function saveAvatar(avatarSeed: string) {
+    setAvatar(avatarSeed)
+    setEditingAvatar(false)
     setPlayers((prev) => prev.map((p) => (p.id === session?.playerId ? { ...p, avatarSeed } : p)))
     send({ type: "player:avatar", avatarSeed })
   }
 
-  function handleRestart() {
-    send({ type: "lobby:restart" })
+  /** Only this player heads back; the others stay on the recap until the host relaunches. */
+  function backToLobby() {
+    navigate(`/lobby/${code}`)
   }
 
   function submitGuess() {
@@ -367,7 +382,7 @@ export default function Game() {
               <Avatar
                 name={p.avatarSeed || p.name}
                 size={48}
-                onReroll={p.id === session.playerId ? handleReroll : undefined}
+                onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
               />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ink text-sm truncate">{p.name}</p>
@@ -466,11 +481,11 @@ export default function Game() {
             <div className="flex justify-center pb-4">
               <button
                 type="button"
-                onClick={handleRestart}
+                onClick={backToLobby}
                 className="flex items-center gap-2 bg-inverse text-inverse-ink px-6 py-3 rounded-xl font-semibold hover:opacity-90 hover:scale-[1.02] active:scale-100 transition-all"
               >
                 <ArrowCounterClockwise size={18} weight="bold" />
-                Nouvelle partie
+                Retour au lobby
               </button>
             </div>
           </div>
@@ -502,7 +517,13 @@ export default function Game() {
 
               <div className="flex items-center justify-between h-7">
                 <span className="text-xs text-muted uppercase tracking-widest">
-                  {isCountdown ? "Préparez-vous" : phase === GamePhase.Reveal ? "Résultat" : "À vous de jouer"}
+                  {isCountdown
+                    ? "Préparez-vous"
+                    : phase === GamePhase.Reveal
+                      ? "Résultat"
+                      : round
+                        ? "À vous de jouer"
+                        : "Tu rejoins en cours, prochaine manche…"}
                 </span>
                 {phase === GamePhase.Playing && !isCountdown && (
                   <span
@@ -641,10 +662,20 @@ export default function Game() {
             </div>
 
             <div className="p-5 pt-3 border-t border-edge bg-surface/60 backdrop-blur">
-              {hint && (
-                <div className="mb-2.5 flex items-center justify-center gap-2 animate-rise">
-                  <Lightbulb size={15} weight="fill" className="text-amber-500" />
-                  <span className="font-mono font-bold text-ink tracking-[0.25em]">{hint}</span>
+              {(hints[HintKind.Artist] || hints[HintKind.Title]) && (
+                <div className="mb-2.5 flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
+                  {hints[HintKind.Artist] && (
+                    <div className="flex items-center gap-2 animate-rise" title="Indice artiste">
+                      <Microphone size={15} weight="fill" className="text-amber-500" />
+                      <span className="font-mono font-bold text-ink tracking-[0.25em]">{hints[HintKind.Artist]}</span>
+                    </div>
+                  )}
+                  {hints[HintKind.Title] && (
+                    <div className="flex items-center gap-2 animate-rise" title="Indice titre">
+                      <Lightbulb size={15} weight="fill" className="text-amber-500" />
+                      <span className="font-mono font-bold text-ink tracking-[0.25em]">{hints[HintKind.Title]}</span>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="flex gap-3">
@@ -724,6 +755,10 @@ export default function Game() {
           </button>
         </div>
       </aside>
+
+      {editingAvatar && (
+        <AvatarEditor value={profile.avatarSeed} onClose={() => setEditingAvatar(false)} onSave={saveAvatar} />
+      )}
     </div>
   )
 }
