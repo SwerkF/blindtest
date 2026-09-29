@@ -1,6 +1,7 @@
 import { ThemeType, type AnimeTheme } from "@blindmusic/shared"
 import type { AnimeMatch, Track } from "@/deezer"
 import { normalize, similarity } from "@/game/text"
+import { coreTitle, expandAnswers } from "@/animeNames"
 
 /**
  * AnimeThemes.moe indexes every anime OP/ED with its song and artists.
@@ -96,59 +97,37 @@ async function searchSongs(query: string): Promise<AtSong[]> {
   return data.search?.songs ?? []
 }
 
-/** Synonyms, cover art and external ids, in one request per batch. */
+/**
+ * Synonyms, cover art and external ids, in one request per batch. Includes
+ * are dropped one by one if the API rejects them, so a schema change on their
+ * side costs extra names, never the cover or the game.
+ */
 async function fetchAnimeDetails(ids: number[]): Promise<Map<number, AtAnime>> {
   const out = new Map<number, AtAnime>()
   if (ids.length === 0) return out
-  const params = new URLSearchParams({
-    "filter[id]": ids.join(","),
-    include: "animesynonyms,images,resources",
-    "page[size]": "100",
-  })
-  try {
-    const data = await fetchAt<{ anime?: AtAnime[] }>(`/anime?${params}`)
-    for (const a of data.anime ?? []) out.set(a.id, a)
-  } catch {
-    // Extra names are a nice-to-have: canonical names still make the game playable
+  for (const include of ["animesynonyms,images,resources", "images,resources", "images"]) {
+    const params = new URLSearchParams({ "filter[id]": ids.join(","), include, "page[size]": "100" })
+    try {
+      const data = await fetchAt<{ anime?: AtAnime[] }>(`/anime?${params}`)
+      for (const a of data.anime ?? []) out.set(a.id, a)
+      return out
+    } catch (err) {
+      if (err instanceof RateLimited) return out
+    }
   }
   return out
 }
 
 interface AniListMedia {
   id: number
-  title?: { romaji?: string | null; english?: string | null; userPreferred?: string | null }
+  seasonYear?: number | null
+  title?: { romaji?: string | null; english?: string | null; native?: string | null }
   synonyms?: (string | null)[]
 }
 
-const ANILIST_QUERY = `query ($ids: [Int]) {
-  Page(perPage: 50) {
-    media(id_in: $ids, type: ANIME) { id title { romaji english userPreferred } synonyms }
-  }
-}`
-
-/** AniList id -> every title it knows for that anime. */
-async function fetchAniListTitles(ids: number[]): Promise<Map<number, string[]>> {
-  const out = new Map<number, string[]>()
-  if (ids.length === 0) return out
-  try {
-    const res = await fetch(ANILIST_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ query: ANILIST_QUERY, variables: { ids } }),
-    })
-    if (!res.ok) return out
-    const data = (await res.json()) as { data?: { Page?: { media?: AniListMedia[] } } }
-    for (const m of data.data?.Page?.media ?? []) {
-      const titles = [m.title?.english, m.title?.romaji, m.title?.userPreferred, ...(m.synonyms ?? [])]
-      out.set(
-        m.id,
-        titles.filter((t): t is string => Boolean(t?.trim()))
-      )
-    }
-  } catch {
-    // AniList down: AnimeThemes names and synonyms are still there
-  }
-  return out
+function titlesOf(m: AniListMedia): string[] {
+  const titles = [m.title?.english, m.title?.romaji, ...(m.synonyms ?? [])]
+  return titles.filter((t): t is string => Boolean(t?.trim()))
 }
 
 function aniListId(anime: AtAnime): number | null {
@@ -156,37 +135,72 @@ function aniListId(anime: AtAnime): number | null {
   return resource?.external_id ?? null
 }
 
+/**
+ * AnimeThemes id -> English/romaji titles and synonyms from AniList (often the
+ * French title and abbreviations like "SnK"). Each anime is searched by its
+ * own name and by its franchise name ("Shingeki no Kyojin"), whose entry has
+ * the richest synonyms; a known AniList id is looked up directly too.
+ */
+async function fetchAniListTitles(animes: AtAnime[]): Promise<Map<number, string[]>> {
+  const out = new Map<number, string[]>()
+  if (animes.length === 0) return out
+
+  const searches: { animeId: number; year: number | null; query: string }[] = []
+  for (const anime of animes) {
+    for (const query of new Set([anime.name, coreTitle(anime.name)])) {
+      if (query.trim()) searches.push({ animeId: anime.id, year: anime.year, query })
+    }
+  }
+  const byAniListId = new Map<number, number>()
+  for (const anime of animes) {
+    const id = aniListId(anime)
+    if (id !== null) byAniListId.set(id, anime.id)
+  }
+
+  const withIds = byAniListId.size > 0
+  const vars = [...(withIds ? ["$ids: [Int]"] : []), ...searches.map((_, i) => `$q${i}: String`)].join(", ")
+  const aliases = searches
+    .map((_, i) => `s${i}: Page(perPage: 3) { media(search: $q${i}, type: ANIME, sort: SEARCH_MATCH) { ...m } }`)
+    .join("\n")
+  const idsAlias = withIds ? "ids: Page(perPage: 50) { media(id_in: $ids, type: ANIME) { ...m } }" : ""
+  const query = `query (${vars}) {
+${idsAlias}
+${aliases}
+}
+fragment m on Media { id seasonYear title { romaji english native } synonyms }`
+  const variables: Record<string, unknown> = withIds ? { ids: [...byAniListId.keys()] } : {}
+  searches.forEach((s, i) => (variables[`q${i}`] = s.query))
+
+  const add = (animeId: number, titles: string[]) => out.set(animeId, [...(out.get(animeId) ?? []), ...titles])
+  try {
+    const res = await fetch(ANILIST_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query, variables }),
+    })
+    if (!res.ok) return out
+    const data = (await res.json()) as { data?: Record<string, { media?: AniListMedia[] } | null> }
+    for (const m of data.data?.ids?.media ?? []) {
+      const animeId = byAniListId.get(m.id)
+      if (animeId !== undefined) add(animeId, titlesOf(m))
+    }
+    searches.forEach((s, i) => {
+      const media = data.data?.[`s${i}`]?.media ?? []
+      // Prefer the entry that aired the same year, the search can surface a sequel first
+      const best = media.find((m) => s.year !== null && m.seasonYear === s.year) ?? media[0]
+      if (best) add(s.animeId, titlesOf(best))
+    })
+  } catch {
+    // AniList down: AnimeThemes names and the built-in French titles still work
+  }
+  return out
+}
+
 const THEME_TYPES = new Set<string>(Object.values(ThemeType))
 
 function toTheme(theme: AtTheme): AnimeTheme | null {
   if (!theme.type || !THEME_TYPES.has(theme.type)) return null
   return { type: theme.type as ThemeType, sequence: theme.sequence ?? null, slug: theme.slug }
-}
-
-/**
- * "Shingeki no Kyojin Season 3 Part 2" should also accept "Shingeki no Kyojin",
- * so season/part suffixes and colon subtitles are peeled into extra answers.
- */
-export function animeNameVariants(name: string): string[] {
-  const variants = new Set<string>([name.trim()])
-  const base = name
-    .replace(/\s*\((tv|movie|ova|ona)\)\s*$/i, "")
-    .replace(/\s*(:|-)?\s*(season|saison|part|cour)\s*\d+.*$/i, "")
-    .replace(/\s*\d+(st|nd|rd|th)\s+season.*$/i, "")
-    .replace(/\s+(ii|iii|iv|\d+)\s*$/i, "")
-    .trim()
-  if (base.length >= 4) variants.add(base)
-  const beforeColon = name.split(":")[0].trim()
-  if (beforeColon.length >= 4) variants.add(beforeColon)
-  return [...variants].filter(Boolean)
-}
-
-/** "Shingeki no Kyojin" -> "snk", "My Hero Academia" -> "mha". */
-export function acronymOf(name: string): string | null {
-  const words = normalize(name).split(" ").filter(Boolean)
-  if (words.length < 2) return null
-  const acronym = words.map((w) => w[0]).join("")
-  return acronym.length >= 2 ? acronym : null
 }
 
 function artistMatches(song: AtSong, deezerArtist: string): boolean {
@@ -266,31 +280,16 @@ export function buildMatch(
   for (const { anime } of entries) {
     titles.push(anime.name)
     for (const syn of anime.animesynonyms ?? []) if (syn.text) titles.push(syn.text)
-    const id = aniListId(anime)
-    if (id !== null) titles.push(...(aniListTitles.get(id) ?? []))
+    titles.push(...(aniListTitles.get(anime.id) ?? []))
   }
-
-  const names = new Set<string>()
-  const acronyms = new Set<string>()
-  for (const title of titles) {
-    for (const v of animeNameVariants(title)) {
-      if (normalize(v).length > 0) names.add(v)
-      const acronym = acronymOf(v)
-      if (acronym) acronyms.add(acronym)
-    }
-  }
-  // An abbreviation spelled out as a synonym ("SnK", "JJK") is an acronym too
-  for (const name of names) {
-    const compact = normalize(name).replace(/\s/g, "")
-    if (compact.length >= 2 && compact.length <= 5) acronyms.add(compact)
-  }
+  const { names, acronyms } = expandAnswers(titles)
 
   const artists = new Set((song.artists ?? []).map((a) => a.name).filter(Boolean))
   if (deezerArtist) artists.add(deezerArtist)
 
   return {
-    names: [...names],
-    acronyms: [...acronyms],
+    names,
+    acronyms,
     artists: [...artists],
     reveal: {
       name: primary.anime.name,
@@ -323,8 +322,12 @@ async function enrich(matched: { track: Track; song: AtSong }[]): Promise<Track[
     for (const t of song.animethemes ?? []) if (t.anime) animeIds.add(t.anime.id)
   }
   const details = await fetchAnimeDetails([...animeIds].slice(0, 100))
-  const aniListIds = [...details.values()].map(aniListId).filter((id): id is number => id !== null)
-  const aniListTitles = await fetchAniListTitles(aniListIds)
+  // Fall back to the anime embedded in the search result when details failed
+  const animes = new Map<number, AtAnime>()
+  for (const { song } of matched) {
+    for (const t of song.animethemes ?? []) if (t.anime) animes.set(t.anime.id, details.get(t.anime.id) ?? t.anime)
+  }
+  const aniListTitles = await fetchAniListTitles([...animes.values()])
 
   return matched.flatMap(({ track, song }) => {
     const anime = buildMatch(song, details, aniListTitles, track.artist)

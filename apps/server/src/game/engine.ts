@@ -18,7 +18,8 @@ import {
   type RoundPublic,
   type WsServerMessage,
 } from "@blindmusic/shared"
-import type { AnimeMatch, Track } from "@/deezer"
+import type { Track } from "@/deezer"
+import { isCloseToAnswer, matchesAnswer } from "@/animeNames"
 import { fetchTrackLyrics } from "@/lyrics"
 import { normalize, similarity } from "@/game/text"
 
@@ -732,12 +733,6 @@ export function animePoints(elapsedMs: number, durationMs: number): number {
   return Math.round(ANIME_MIN_POINTS + (ANIME_MAX_POINTS - ANIME_MIN_POINTS) * left)
 }
 
-function matchesAnime(guess: string, anime: AnimeMatch, maxErr: number): boolean {
-  const compact = guess.replace(/\s/g, "")
-  // Abbreviations are too short for fuzzy matching: exact only
-  if (anime.acronyms.includes(compact)) return true
-  return anime.names.some((name) => isMatch(guess, name, maxErr))
-}
 
 /**
  * Anime mode: the answer is the anime, worth more the faster it is found.
@@ -751,7 +746,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
 
   const maxErr = room.settings!.maxErrorPercent
   const guess = normalize(raw)
-  const animeMatch = !player.hasFoundBoth && matchesAnime(guess, anime, maxErr)
+  const animeMatch = !player.hasFoundBoth && matchesAnswer(raw, anime, maxErr)
   const artistMatch = !player.hasFoundArtist && anime.artists.some((a) => isMatch(guess, a, maxErr))
 
   let pointsEarned = 0
@@ -777,7 +772,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
   else if (animeMatch) matched = GuessMatch.Anime
   else if (artistMatch) matched = GuessMatch.Artist
   else if (
-    (!player.hasFoundBoth && anime.names.some((name) => isClose(guess, name, maxErr))) ||
+    (!player.hasFoundBoth && isCloseToAnswer(raw, anime, maxErr)) ||
     (!player.hasFoundArtist && anime.artists.some((a) => isClose(guess, a, maxErr)))
   ) {
     matched = GuessMatch.Close

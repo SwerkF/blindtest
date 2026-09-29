@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import {
   GameMode,
   GuessMatch,
@@ -6,7 +6,8 @@ import {
   type LobbySettings,
   type WsServerMessage,
 } from "@blindmusic/shared"
-import { acronymOf, animeNameVariants, buildMatch, pickSong, streamAnimeTracks, type AtSong } from "@/anime"
+import { buildMatch, pickSong, streamAnimeTracks, type AtSong } from "@/anime"
+import { acronymOf, animeNameVariants, coreTitle, expandAnswers, matchesAnswer } from "@/animeNames"
 import type { Track } from "@/deezer"
 import {
   createRoom,
@@ -107,7 +108,7 @@ test("buildMatch ajoute les titres AniList (anglais, francais) via la ressource 
   const details = new Map([
     [10, { ...GURENGE.animethemes![0].anime!, resources: [{ site: "AniList", external_id: 101922 }] }],
   ])
-  const aniList = new Map([[101922, ["Demon Slayer: Kimetsu no Yaiba", "Les Rôdeurs de la nuit"]]])
+  const aniList = new Map([[10, ["Demon Slayer: Kimetsu no Yaiba", "Les Rôdeurs de la nuit"]]])
   const match = buildMatch(GURENGE, details, aniList, "LiSA")!
   expect(match.names).toContain("Demon Slayer")
   expect(match.names).toContain("Les Rôdeurs de la nuit")
@@ -119,7 +120,8 @@ function mockApis() {
   globalThis.fetch = mock(async (input: string | URL | Request) => {
     const url = new URL(String(input))
     if (url.hostname === "graphql.anilist.co") {
-      return Response.json({ data: { Page: { media: [{ id: 101922, title: { english: "Demon Slayer" }, synonyms: [] }] } } })
+      const media = [{ id: 101922, seasonYear: 2019, title: { english: "Demon Slayer" }, synonyms: [] }]
+      return Response.json({ data: { ids: { media: [] }, s0: { media } } })
     }
     if (url.pathname === "/search") {
       const songs = url.searchParams.get("q") === "Gurenge" ? [GURENGE] : []
@@ -253,3 +255,63 @@ test("chargement progressif : la partie attend le titre suivant puis se termine"
   finishTrackLoading("A4", gameId!)
   removePlayer("A4", "a")
 }, 10_000)
+
+test("les titres de saison se ramenent au nom de la serie", () => {
+  expect(coreTitle("Shingeki no Kyojin: The Final Season Part 2")).toBe("Shingeki no Kyojin")
+  expect(coreTitle("Attack on Titan Final Season Part 2")).toBe("Attack on Titan")
+  expect(coreTitle("Boku no Hero Academia 2nd Season")).toBe("Boku no Hero Academia")
+  expect(coreTitle("JoJo no Kimyou na Bouken Part 4: Diamond wa Kudakenai")).toBe("JoJo no Kimyou na Bouken")
+  expect(coreTitle("Overlord III")).toBe("Overlord")
+})
+
+describe("reponses acceptees, sur les cas remontes en jeu", () => {
+  // Ce que renvoient AnimeThemes + AniList pour chaque anime
+  const cases: { titles: string[]; accepted: string[]; refused: string[] }[] = [
+    {
+      titles: ["Shingeki no Kyojin: The Final Season Part 2", "Attack on Titan Final Season Part 2"],
+      accepted: ["snk", "SNK", "aot", "attack on titan", "attaque des titans", "l'attaque des titants", "shingeki no kyojin"],
+      refused: ["one piece", "titan"],
+    },
+    {
+      titles: ["Kimetsu no Yaiba"],
+      accepted: ["demon slayer", "Demon Slayer", "DS", "kimetsu no yaiba", "kimetsu", "kny"],
+      refused: ["jujutsu kaisen"],
+    },
+    {
+      titles: ["Boku no Hero Academia 2nd Season"],
+      accepted: ["my hero academia", "MHA", "bnha", "boku no hero academia", "boku no hero"],
+      refused: ["hero"],
+    },
+    {
+      titles: ["Ano Hi Mita Hana no Namae wo Bokutachi wa Mada Shiranai."],
+      accepted: ["anohana", "ano hana"],
+      refused: ["hana", "bokutachi"],
+    },
+    {
+      titles: ["JoJo no Kimyou na Bouken Part 4: Diamond wa Kudakenai"],
+      accepted: ["jojo", "jojo's bizarre adventure", "jojo no kimyou na bouken", "diamond is unbreakable"],
+      refused: ["dio"],
+    },
+  ]
+  for (const c of cases) {
+    test(c.titles[0], () => {
+      const answers = expandAnswers(c.titles)
+      // "Diamond is Unbreakable" comes from the AniList English title
+      const extra = c.titles[0].startsWith("JoJo")
+        ? expandAnswers([...c.titles, "JoJo's Bizarre Adventure: Diamond is Unbreakable"])
+        : answers
+      for (const guess of c.accepted) {
+        const ok = matchesAnswer(guess, extra, 20)
+        expect({ guess, ok }).toEqual({ guess, ok: true })
+      }
+      for (const guess of c.refused) expect({ guess, ok: matchesAnswer(guess, extra, 20) }).toEqual({ guess, ok: false })
+    })
+  }
+})
+
+test("sans AniList, les classiques gardent leurs noms anglais, francais et abreviations", () => {
+  const answers = expandAnswers(["Shingeki no Kyojin: The Final Season Part 2"])
+  for (const guess of ["aot", "attack on titan", "attaque des titans", "snk"]) {
+    expect({ guess, ok: matchesAnswer(guess, answers, 20) }).toEqual({ guess, ok: true })
+  }
+})
