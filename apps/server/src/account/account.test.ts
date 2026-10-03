@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { AchievementId, achievementDef, FriendshipStatus, GameMode, type LobbySettings, type RoundOutcome } from "@blindmusic/shared"
-import { evaluateAchievements, isWin, type AchievementContext } from "@/account/achievements"
+import { evaluateAchievements, FLAWLESS_MIN_ROUNDS, isWin, type AchievementContext } from "@/account/achievements"
 import { SWERK_DISCORD_ID } from "@/account/config"
 import {
   FriendAction,
@@ -83,26 +83,51 @@ test("succès : éclair sous 3 secondes, pas à 3 pile", () => {
   expect(evaluateAchievements(ctx({ fastestFindMs: null }), [])).not.toContain(AchievementId.Lightning)
 })
 
-test("succès : manche parfaite, sans-faute et historien", () => {
+test("succès : manche parfaite et historien", () => {
   const perfect = evaluateAchievements(ctx({ outcomes: [MISS, ALL, MISS] }), [])
   expect(perfect).toContain(AchievementId.PerfectRound)
   expect(perfect).not.toContain(AchievementId.Flawless)
-
-  const flawless = evaluateAchievements(ctx({ roundCount: 5, outcomes: [BOTH, BOTH, ALL, ALL, ALL] }), [])
-  expect(flawless).toContain(AchievementId.Flawless)
-  expect(flawless).not.toContain(AchievementId.Historian)
-
-  // A missing outcome (round never played) breaks the streak
-  expect(evaluateAchievements(ctx({ roundCount: 5, outcomes: [BOTH, BOTH, BOTH, BOTH] }), [])).not.toContain(
-    AchievementId.Flawless
-  )
   expect(evaluateAchievements(ctx({ outcomes: [ALL, ALL, ALL, ALL, ALL] }), [])).toContain(AchievementId.Historian)
+  expect(evaluateAchievements(ctx({ outcomes: [ALL, ALL, ALL, ALL] }), [])).not.toContain(AchievementId.Historian)
 })
 
-test("succès : en mode anime le sans-faute ne demande que l'anime", () => {
-  const animeOnly: RoundOutcome = { artist: false, title: true, year: false }
-  const ids = evaluateAchievements(ctx({ mode: GameMode.Anime, roundCount: 5, outcomes: Array(5).fill(animeOnly) }), [])
-  expect(ids).toContain(AchievementId.Flawless)
+const TITLE: RoundOutcome = { artist: false, title: true, year: false }
+const TITLE_YEAR: RoundOutcome = { artist: false, title: true, year: true }
+const SANS_FAUTE = [AchievementId.Flawless, AchievementId.FlawlessPerfect, AchievementId.FlawlessUltimate]
+
+function sansFaute(outcomes: RoundOutcome[], overrides: Partial<AchievementContext> = {}): AchievementId[] {
+  const ids = evaluateAchievements(ctx({ roundCount: outcomes.length, outcomes, ...overrides }), [])
+  return SANS_FAUTE.filter((id) => ids.includes(id))
+}
+
+test("succès : paliers sans faute selon ce qui est trouvé à chaque manche", () => {
+  expect(FLAWLESS_MIN_ROUNDS).toBe(10)
+  expect(sansFaute(Array(10).fill(TITLE))).toEqual([AchievementId.Flawless])
+  expect(sansFaute(Array(10).fill(TITLE_YEAR))).toEqual([AchievementId.Flawless])
+  expect(sansFaute(Array(10).fill(BOTH))).toEqual([AchievementId.Flawless, AchievementId.FlawlessPerfect])
+  expect(sansFaute(Array(10).fill(ALL))).toEqual(SANS_FAUTE)
+  // The weakest round sets the tier
+  expect(sansFaute([...Array(9).fill(ALL), BOTH])).toEqual([AchievementId.Flawless, AchievementId.FlawlessPerfect])
+  expect(sansFaute([...Array(9).fill(ALL), TITLE])).toEqual([AchievementId.Flawless])
+  // The artist alone is not the title
+  expect(sansFaute([...Array(9).fill(ALL), { artist: true, title: false, year: true }])).toEqual([])
+  expect(sansFaute([...Array(9).fill(ALL), MISS])).toEqual([])
+})
+
+test("succès : sans faute demande au moins 10 titres, tous joués", () => {
+  expect(sansFaute(Array(9).fill(ALL))).toEqual([])
+  expect(sansFaute(Array(30).fill(ALL))).toEqual(SANS_FAUTE)
+  // A missing outcome (round never played) breaks the streak
+  expect(sansFaute(Array(9).fill(ALL), { roundCount: 10 })).toEqual([])
+  expect(sansFaute([...Array(4).fill(ALL), undefined as unknown as RoundOutcome, ...Array(5).fill(ALL)])).toEqual([])
+})
+
+test("succès : en mode anime, l'anime compte comme le titre et l'interprète comme l'artiste", () => {
+  const anime = { mode: GameMode.Anime }
+  expect(sansFaute(Array(10).fill(TITLE), anime)).toEqual([AchievementId.Flawless])
+  expect(sansFaute(Array(10).fill(BOTH), anime)).toEqual([AchievementId.Flawless, AchievementId.FlawlessPerfect])
+  expect(sansFaute(Array(10).fill(ALL), anime)).toEqual(SANS_FAUTE)
+  expect(sansFaute(Array(10).fill({ artist: true, title: false, year: false }), anime)).toEqual([])
 })
 
 test("succès : score, marathon, amis et équipe", () => {
