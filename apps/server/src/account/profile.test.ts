@@ -12,6 +12,7 @@ const USER: User = {
   avatarSeed: "v1|nelly|sun|30||happy",
   useDiscordAvatar: false,
   friendCode: "ABCD2345",
+  packsSincePity: 0,
   createdAt: new Date("2026-01-02T03:04:05Z"),
   updatedAt: new Date("2026-01-02T03:04:05Z"),
 }

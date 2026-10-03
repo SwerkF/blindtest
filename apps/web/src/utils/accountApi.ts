@@ -1,5 +1,10 @@
 import type {
   AccountUser,
+  BoosterStateResponse,
+  CardRarity,
+  CollectionResponse,
+  OpenPackResponse,
+  PackRarity,
   FriendRequestOutcome,
   FriendsResponse,
   HistoryResponse,
@@ -17,6 +22,9 @@ export enum AccountQueryKey {
   Achievements = "account:achievements",
   /** Followed by the user id. */
   PublicProfile = "account:public-profile",
+  Boosters = "account:boosters",
+  /** Followed by the owner ("me" or a user id), the rarity filter and the page. */
+  Collection = "account:collection",
 }
 
 /** Full-page redirect: the server sends the browser to Discord and back. */
@@ -42,6 +50,22 @@ export const accountApi = {
   achievements: () => req<UnlockedAchievement[]>("/me/achievements"),
 
   publicProfile: (userId: string) => req<PublicProfileResponse>(`/users/${encodeURIComponent(userId)}`),
+
+  boosters: () => req<BoosterStateResponse>("/me/boosters"),
+
+  openPack: (rarity: PackRarity) =>
+    req<OpenPackResponse>("/me/boosters/open", { method: "POST", body: JSON.stringify({ rarity }) }),
+
+  /** `userId` null = my own collection. */
+  collection: (userId: string | null, page: number, rarity: CardRarity | null) => {
+    const query = new URLSearchParams({ page: String(page), ...(rarity ? { rarity } : {}) })
+    const base = userId ? `/users/${encodeURIComponent(userId)}/collection` : "/me/collection"
+    return req<CollectionResponse>(`${base}?${query}`)
+  },
+
+  /** A cover failed to load from the Deezer CDN: the next catalogue run refreshes it. */
+  reportCover: (entryId: string) =>
+    req<void>(`/cards/${encodeURIComponent(entryId)}/cover-missing`, { method: "POST", body: "{}" }),
 
   friends: () => req<FriendsResponse>("/friends"),
 

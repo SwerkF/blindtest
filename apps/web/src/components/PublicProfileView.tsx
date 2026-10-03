@@ -11,6 +11,7 @@ import {
 } from "@blindmusic/shared"
 import Avatar from "@/components/Avatar"
 import ProfileStatsBlock from "@/components/ProfileStats"
+import CollectionGrid from "@/components/booster/CollectionGrid"
 import { HistoryRow } from "@/pages/Profile"
 import { AccountQueryKey, accountApi } from "@/utils/accountApi"
 import { ApiError } from "@/utils/api"
@@ -110,6 +111,11 @@ function ProfileBody({
             })}
           </ul>
         )}
+      </section>
+
+      <section className="bg-surface border border-edge rounded-3xl p-4 sm:p-6">
+        <h2 className="text-xs text-muted font-medium uppercase tracking-wider mb-3">Collection de vinyles</h2>
+        <CollectionGrid userId={user.id} emptyText="Aucun vinyle dans cette collection pour l'instant." />
       </section>
 
       <section className="bg-surface border border-edge rounded-3xl p-4 sm:p-6">

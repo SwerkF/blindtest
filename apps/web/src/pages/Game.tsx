@@ -49,6 +49,7 @@ import {
 } from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
+import { useAuth } from "@/hooks/useAuth"
 import { clearSession, loadSession } from "@/utils/api"
 import { appendHistory } from "@/utils/storage"
 import { Cue, playCue } from "@/utils/audio"
@@ -296,6 +297,7 @@ export default function Game() {
   const session = loadSession(code!)
   const { send, onMessage, connected } = useWs(code ?? "", session?.playerId ?? "")
   const { profile, setAvatar } = useProfile()
+  const { user: account, discordEnabled } = useAuth()
   const [editingAvatar, setEditingAvatar] = useState(false)
 
   const [phase, setPhase] = useState<GamePhase>(GamePhase.Playing)
@@ -927,6 +929,12 @@ export default function Game() {
                 </div>
               ))}
             </div>
+
+            {!account && discordEnabled && (
+              <p className="text-center text-xs text-muted mb-4">
+                💿 Connecte-toi avec Discord depuis ton profil pour gagner des boosters de vinyles en jouant.
+              </p>
+            )}
 
             <div className="flex justify-center pb-4">
               <button

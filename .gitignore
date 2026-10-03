@@ -4,3 +4,5 @@ dist
 *.db
 *.db-journal
 apps/server/prisma/generated
+
+apps/server/scripts/catalog/.cache

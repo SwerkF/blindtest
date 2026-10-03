@@ -359,6 +359,103 @@ body {
   animation: reaction-float 2.6s ease-out both;
 }
 
+/* Vinyl booster opening: pack wiggle and tear, sleeves sliding out, record sliding from its sleeve */
+@keyframes pack-shake {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  20% {
+    transform: rotate(-4deg) scale(1.03);
+  }
+  40% {
+    transform: rotate(4deg) scale(1.05);
+  }
+  60% {
+    transform: rotate(-3deg) scale(1.05);
+  }
+  80% {
+    transform: rotate(3deg) scale(1.03);
+  }
+}
+
+@utility animate-pack-shake {
+  animation: pack-shake 0.45s ease-in-out infinite;
+}
+
+@keyframes pack-tear {
+  to {
+    transform: translateY(-36px) scale(1.12);
+    opacity: 0;
+  }
+}
+
+@utility animate-pack-tear {
+  animation: pack-tear 0.4s ease-in both;
+}
+
+@keyframes vinyl-out {
+  from {
+    opacity: 0;
+    transform: translateY(48px) rotate(-6deg) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-vinyl-out {
+  animation: vinyl-out 0.45s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes vinyl-flip {
+  from {
+    transform: perspective(600px) rotateY(90deg) scale(0.9);
+  }
+  to {
+    transform: perspective(600px) rotateY(0deg) scale(1);
+  }
+}
+
+@utility animate-vinyl-flip {
+  animation: vinyl-flip 0.35s ease-out both;
+}
+
+/* Horizontal only: the vertical centring comes from Tailwind's separate `translate` property */
+@keyframes disc-slide {
+  from {
+    transform: translateX(-32%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@utility animate-disc-slide {
+  animation: disc-slide 0.6s 0.25s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+/* Epic and legendary sleeves: a light sweep across the cover, no glow */
+@keyframes vinyl-sheen {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+.vinyl-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.38) 50%, transparent 65%);
+  background-size: 250% 100%;
+  animation: vinyl-sheen 3.2s ease-in-out infinite;
+}
+
 /* Respect users who ask for less motion */
 @media (prefers-reduced-motion: reduce) {
   *,

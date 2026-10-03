@@ -128,7 +128,12 @@ function Notice() {
           <Ext href="https://animethemes.moe">AnimeThemes</Ext> et d'<Ext href="https://anilist.co">AniList</Ext>.
         </p>
         <p>
-          {SITE.name} n'est affilié ni à Deezer, ni à AnimeThemes, ni à AniList. Pour toute demande de retrait d'un
+          Le catalogue des vinyles de la collection est construit à partir des données ouvertes de{" "}
+          <Ext href="https://musicbrainz.org">MusicBrainz</Ext> et de <Ext href="https://listenbrainz.org">ListenBrainz</Ext>{" "}
+          (popularité des titres), complétées par les classements publics de Deezer.
+        </p>
+        <p>
+          {SITE.name} n'est affilié ni à Deezer, ni à AnimeThemes, ni à AniList, ni à MusicBrainz. Pour toute demande de retrait d'un
           contenu, contactez l'éditeur (<Contact />).
         </p>
       </Section>

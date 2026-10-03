@@ -11,6 +11,7 @@ import Toaster from "@/components/Toaster"
 import type { HomeNavState } from "@/pages/Home"
 import ProfileDrawer from "@/components/ProfileDrawer"
 import { ProfileTab, openProfile } from "@/utils/profileDrawer"
+import { PACK_STYLE } from "@/utils/rarity"
 
 const INVITE_TOAST_MS = 20_000
 const AUTH_ERROR_PARAM = "authError"
@@ -105,6 +106,15 @@ export default function AccountRoot() {
           const def = achievementDef(id)
           if (def) showToast({ title: `Succès débloqué : ${def.name}`, text: def.description, icon: def.icon })
         }
+        break
+      case "booster:earned":
+        void queryClient.invalidateQueries({ queryKey: [AccountQueryKey.Boosters] })
+        showToast({
+          title: "Booster gagné !",
+          text: `Un pack ${PACK_STYLE[msg.rarity].label.toLowerCase()} t'attend dans ta collection`,
+          icon: "💿",
+          action: { label: "Ouvrir", onClick: () => openProfile(ProfileTab.Collection) },
+        })
         break
     }
   }

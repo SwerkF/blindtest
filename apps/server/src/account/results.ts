@@ -5,10 +5,12 @@ import { evaluateAchievements, isWin } from "@/account/achievements"
 import { notifyUser } from "@/account/presence"
 import { swerkFriendsAmong, swerkUserId } from "@/account/swerk"
 import { roundCounters } from "@/account/stats"
+import { grantDrop } from "@/booster/drop"
 
 /**
- * Stores the game in the history of every logged-in participant and unlocks
- * their achievements. Guests are skipped: their history stays in localStorage.
+ * Stores the game in the history of every logged-in participant, unlocks
+ * their achievements and rolls their booster drop. Guests are skipped: their
+ * history stays in localStorage.
  */
 export async function persistGameResults(summary: GameEndSummary) {
   const playerCount = summary.players.length
@@ -31,7 +33,7 @@ export async function persistGameResults(summary: GameEndSummary) {
     if (seen.has(player.userId)) continue
     seen.add(player.userId)
     const won = isWin(player.rank, playerCount)
-    const [, gamesPlayed, wins, unlocked] = await prisma.$transaction([
+    const [gameResult, gamesPlayed, wins, unlocked] = await prisma.$transaction([
       prisma.gameResult.create({
         data: {
           userId: player.userId,
@@ -51,6 +53,16 @@ export async function persistGameResults(summary: GameEndSummary) {
       prisma.gameResult.count({ where: { userId: player.userId, won: true } }),
       prisma.userAchievement.findMany({ where: { userId: player.userId }, select: { achievementId: true } }),
     ])
+
+    // Time played and performance decide whether a vinyl pack drops (see booster/drop.ts)
+    await grantDrop(player.userId, gameResult.id, {
+      playerCount,
+      roundCount: summary.roundCount,
+      roundDurationSec: summary.roundDurationMs / 1000,
+      score: player.score,
+      titleFound: roundCounters(player.outcomes, player.titleFindMs).titleFound,
+      rank: player.rank,
+    })
 
     const ids = evaluateAchievements(
       {
