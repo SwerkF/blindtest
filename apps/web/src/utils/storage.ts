@@ -53,6 +53,14 @@ export function saveProfile(profile: UserProfile) {
   localStorage.setItem(StorageKey.Profile, JSON.stringify(profile))
 }
 
+export const PROFILE_CHANGED_EVENT = "blindtest:profile-changed"
+
+/** Saves a profile coming from elsewhere (the account) and tells mounted useProfile hooks. */
+export function applyProfile(profile: UserProfile) {
+  saveProfile(profile)
+  window.dispatchEvent(new CustomEvent(PROFILE_CHANGED_EVENT))
+}
+
 function readTrack(value: unknown): HistoryTrack | null {
   if (!isRecord(value)) return null
   if (typeof value.title !== "string" || typeof value.artist !== "string" || typeof value.year !== "number") return null

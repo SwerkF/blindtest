@@ -23,7 +23,7 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(path: string, options?: RequestInit): Promise<T> {
+export async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
     ...options,

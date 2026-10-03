@@ -165,11 +165,12 @@ function Terms() {
         <p>
           Le jeu est gratuit et ne demande aucun compte : il suffit de choisir un pseudo et un avatar. Un salon est
           accessible à toute personne qui en connaît le code, sauf si l'hôte l'a protégé par un mot de passe.
+          Se connecter avec Discord est facultatif et permet de garder son historique, ses succès et ses amis.
         </p>
         <p>
           Le service est fourni « en l'état », sans garantie de disponibilité. Il peut être interrompu, modifié ou
-          arrêté à tout moment, notamment pour maintenance. Les parties ne sont pas sauvegardées sur nos serveurs : un
-          salon disparaît quand tous ses joueurs l'ont quitté.
+          arrêté à tout moment, notamment pour maintenance. Un salon disparaît quand tous ses joueurs l'ont quitté ;
+          seuls les résultats des joueurs connectés avec Discord sont conservés dans leur historique.
         </p>
       </Section>
 
@@ -226,7 +227,7 @@ function Privacy() {
           . Contact : <Contact />.
         </p>
         <p>
-          Le principe du jeu est d'en collecter le moins possible : pas de compte, pas d'adresse e-mail, pas de
+          Le principe du jeu est d'en collecter le moins possible : compte facultatif, pas d'adresse e-mail, pas de
           publicité, pas de mesure d'audience ni de cookie de suivi.
         </p>
       </Section>
@@ -254,6 +255,24 @@ function Privacy() {
         </p>
       </Section>
 
+      <Section title="Compte Discord (facultatif)">
+        <p>
+          Si vous choisissez de vous connecter avec Discord, nous recevons uniquement votre identifiant, votre nom et
+          votre image de profil Discord (autorisation « identify », sans adresse e-mail ni accès à vos serveurs ou
+          messages). Nous enregistrons alors, en base de données :
+        </p>
+        <ul className="list-disc pl-5 flex flex-col gap-1">
+          <li>ces informations Discord, votre pseudo, votre avatar et votre code ami ;</li>
+          <li>le résultat de vos parties (date, mode, score, rang) et les succès débloqués ;</li>
+          <li>vos amis et demandes d'amis, et une session de connexion valable 30 jours.</li>
+        </ul>
+        <p>
+          Vos amis voient votre pseudo, votre avatar, votre nom Discord et si vous êtes en ligne. Ces données sont
+          conservées tant que le compte existe ; vous pouvez le supprimer à tout moment depuis votre profil, ce qui
+          efface tout ce qui précède. <strong>Base légale</strong> : votre consentement, donné en vous connectant.
+        </p>
+      </Section>
+
       <Section title="Données techniques">
         <p>
           Comme tout serveur web, le serveur enregistre des journaux techniques (adresse IP, date, page demandée) pour
@@ -263,7 +282,11 @@ function Privacy() {
       </Section>
 
       <Section title="Stockage dans votre navigateur">
-        <p>Le site n'utilise pas de cookie. Il enregistre dans votre navigateur (stockage local) :</p>
+        <p>
+          Le site n'utilise pas de cookie de suivi. Seul un cookie de session, strictement nécessaire, est déposé si
+          vous vous connectez avec Discord (et un cookie temporaire pendant la connexion). Le site enregistre aussi
+          dans votre navigateur (stockage local) :
+        </p>
         <ul className="list-disc pl-5 flex flex-col gap-1">
           <li>votre pseudo et votre avatar, pour ne pas les ressaisir ;</li>
           <li>l'historique de vos 20 dernières parties (rang, score, titres joués) ;</li>
@@ -292,6 +315,10 @@ function Privacy() {
             les serveurs de Google.
           </li>
           <li>
+            <Ext href="https://discord.com/privacy">Discord</Ext> (États-Unis) : uniquement si vous vous connectez ;
+            les images de profil Discord sont chargées depuis ses serveurs.
+          </li>
+          <li>
             AnimeThemes, <Ext href="https://anilist.co">AniList</Ext> et lyrics.ovh sont interrogés par notre
             serveur, sans aucune donnée vous concernant.
           </li>
@@ -308,17 +335,17 @@ function Privacy() {
 
       <Section title="Sécurité">
         <p>
-          Les échanges avec le site sont chiffrés (TLS). Aucune donnée de partie n'étant enregistrée, rien n'est
-          conservé au-delà de la vie d'un salon.
+          Les échanges avec le site sont chiffrés (TLS). Sans compte, rien n'est conservé au-delà de la vie d'un
+          salon. Le cookie de session est signé, inaccessible aux scripts de la page et révocable à la déconnexion.
         </p>
       </Section>
 
       <Section title="Vos droits">
         <p>
           Conformément au RGPD et à la loi Informatique et Libertés, vous disposez d'un droit d'accès, de
-          rectification, d'effacement, d'opposition et de limitation sur vos données. Comme presque rien n'est
-          conservé, la plupart de ces demandes se règlent en quittant la partie ou en vidant le stockage de votre
-          navigateur. Pour toute autre demande : <Contact />.
+          rectification, d'effacement, d'opposition et de limitation sur vos données. Sans compte, la plupart de ces
+          demandes se règlent en quittant la partie ou en vidant le stockage de votre navigateur ; avec un compte,
+          vous pouvez le supprimer depuis votre profil. Pour toute autre demande : <Contact />.
         </p>
         <p>
           Vous pouvez aussi introduire une réclamation auprès de la{" "}

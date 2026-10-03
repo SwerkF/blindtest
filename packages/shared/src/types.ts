@@ -239,3 +239,5 @@ export function parseDeezerPlaylistId(input: string): string | null {
   const match = trimmed.match(/playlist\/(\d{5,})/)
   return match?.[1] ?? null
 }
+
+export * from "./account"

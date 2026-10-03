@@ -34,6 +34,7 @@ import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import LegalFooter from "@/components/LegalFooter"
+import InviteFriendsButton from "@/components/InviteFriendsButton"
 
 const DEFAULT_SETTINGS: LobbySettings = {
   mode: GameMode.Classic,
@@ -337,6 +338,7 @@ export default function Lobby() {
                 {copied === "link" ? <Check size={16} weight="bold" /> : <ShareNetwork size={16} weight="bold" />}
                 {copied === "link" ? "Lien copié !" : "Inviter des amis"}
               </button>
+              <InviteFriendsButton code={code ?? ""} />
               <button
                 type="button"
                 onClick={leaveLobby}

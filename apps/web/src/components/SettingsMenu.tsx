@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Check, GearSix } from "@phosphor-icons/react"
 import { PALETTES, getPalette, setPalette, type Palette } from "@/utils/palette"
 import ThemeToggle from "@/components/ThemeToggle"
+import AccountMenuSection from "@/components/AccountMenuSection"
 
 /** Gear button opening the site look settings: colour theme and dark mode. */
 export default function SettingsMenu() {
@@ -74,6 +75,7 @@ export default function SettingsMenu() {
             <span className="text-xs text-muted font-medium uppercase tracking-wider">Mode sombre</span>
             <ThemeToggle />
           </div>
+          <AccountMenuSection onNavigate={() => setOpen(false)} />
         </div>
       )}
     </div>

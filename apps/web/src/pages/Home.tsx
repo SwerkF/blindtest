@@ -18,6 +18,7 @@ import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import LegalFooter from "@/components/LegalFooter"
 import Modal from "@/components/Modal"
+import DiscordLoginButton from "@/components/DiscordLoginButton"
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -166,6 +167,7 @@ export default function Home() {
               className={inputClass}
             />
           </div>
+          <DiscordLoginButton className="mt-1" />
         </div>
 
         {/* Jouer */}

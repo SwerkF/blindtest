@@ -41,6 +41,10 @@ interface PlayerState {
   dropTimer: ReturnType<typeof setTimeout> | null
   /** One entry per finished round, in play order. */
   outcomes: RoundOutcome[]
+  /** Discord account behind this player, null for guests. */
+  userId: string | null
+  /** Quickest title (or anime) find this game, for achievements. */
+  fastestFindMs: number | null
   send: (msg: WsServerMessage) => void
 }
 
@@ -101,6 +105,8 @@ function newPlayer(
     connected: false,
     dropTimer: null,
     outcomes: [],
+    userId: null,
+    fastestFindMs: null,
     send,
   }
 }
@@ -384,6 +390,7 @@ export async function startGame(
   for (const p of room.players.values()) {
     p.score = 0
     p.outcomes = []
+    p.fastestFindMs = null
   }
   // Playing from the countdown onwards, so clients landing on the game page
   // during it are not bounced back to the lobby
@@ -476,6 +483,7 @@ function nextRound(room: Room) {
     room.phase = GamePhase.End
     // The room stays alive so everyone can replay on the same code
     broadcast(room, endMessage(room))
+    notifyGameEnd(room)
   }
 }
 
@@ -638,6 +646,7 @@ export function restartToLobby(code: string) {
   for (const p of room.players.values()) {
     p.score = 0
     p.outcomes = []
+    p.fastestFindMs = null
     p.hasFoundArtist = false
     p.hasFoundTitle = false
     p.hasFoundBoth = false
@@ -725,6 +734,7 @@ function evaluateGuess(code: string, playerId: string, text: string): GuessResul
   if (titleMatch) {
     player.hasFoundTitle = true
     pointsEarned += TITLE_POINTS
+    recordFind(room, player)
   }
 
   // Completing the pair tops the round up to the combo value, whether the two
@@ -845,6 +855,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
       room.firstBothFoundBy = player.id
       firstBoth = true
     }
+    recordFind(room, player)
   }
   if (artistMatch) {
     player.hasFoundArtist = true
@@ -874,4 +885,103 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
   }
   endRoundIfAllFound(room)
   return result
+}
+
+function recordFind(room: Room, player: PlayerState) {
+  const elapsed = Date.now() - room.roundStartedAt
+  if (player.fastestFindMs === null || elapsed < player.fastestFindMs) player.fastestFindMs = elapsed
+}
+
+/** Ties the player to a logged-in account so the game lands in their history. */
+export function linkUser(code: string, playerId: string, userId: string | null) {
+  const player = rooms.get(code)?.players.get(playerId)
+  if (player) player.userId = userId
+}
+
+/** Room membership of an account, to check that an inviter is really in the lobby. */
+export function isUserInRoom(code: string, userId: string): boolean {
+  const room = rooms.get(code)
+  if (!room) return false
+  for (const p of room.players.values()) if (p.userId === userId) return true
+  return false
+}
+
+export interface GameEndPlayer {
+  playerId: string
+  userId: string | null
+  name: string
+  score: number
+  /** 1 for the best score, ties share a rank. */
+  rank: number
+  outcomes: RoundOutcome[]
+  fastestFindMs: number | null
+  team: string | null
+  teamWon: boolean | null
+}
+
+export interface GameEndSummary {
+  code: string
+  mode: GameMode
+  roundCount: number
+  players: GameEndPlayer[]
+}
+
+/** Team mode lives on another branch: read the team duck-typed so this keeps compiling either way. */
+function teamOf(player: PlayerState): string | null {
+  const team = (player as { team?: unknown }).team
+  if (typeof team === "string" && team) return team
+  return typeof team === "number" ? String(team) : null
+}
+
+export function gameSummary(room: Room): GameEndSummary {
+  const players = [...room.players.values()]
+  const teamScores = new Map<string, number>()
+  for (const p of players) {
+    const team = teamOf(p)
+    if (team) teamScores.set(team, (teamScores.get(team) ?? 0) + p.score)
+  }
+  const bestTeamScore = Math.max(...teamScores.values())
+  const winningTeams = [...teamScores].filter(([, score]) => score === bestTeamScore).map(([team]) => team)
+  const winningTeam = teamScores.size >= 2 && winningTeams.length === 1 ? winningTeams[0] : null
+  return {
+    code: room.code,
+    mode: room.settings?.mode ?? GameMode.Classic,
+    roundCount: room.tracks.length,
+    players: players.map((p) => {
+      const team = teamOf(p)
+      return {
+        playerId: p.id,
+        userId: p.userId,
+        name: p.name,
+        score: p.score,
+        rank: 1 + players.filter((other) => other.score > p.score).length,
+        outcomes: [...p.outcomes],
+        fastestFindMs: p.fastestFindMs,
+        team,
+        teamWon: team && teamScores.size >= 2 ? team === winningTeam : null,
+      }
+    }),
+  }
+}
+
+type GameEndListener = (summary: GameEndSummary) => void
+const gameEndListeners: GameEndListener[] = []
+
+/** Called once per finished game (accounts persist history and achievements from it). */
+export function onGameEnd(listener: GameEndListener): () => void {
+  gameEndListeners.push(listener)
+  return () => {
+    const index = gameEndListeners.indexOf(listener)
+    if (index >= 0) gameEndListeners.splice(index, 1)
+  }
+}
+
+function notifyGameEnd(room: Room) {
+  if (gameEndListeners.length === 0) return
+  const summary = gameSummary(room)
+  for (const listener of gameEndListeners) {
+    try {
+      listener(summary)
+    } catch {}
+  }
 }

@@ -22,3 +22,78 @@ model Playlist {
 
   @@index([slug])
 }
+
+/// Optional account, created on the first Discord login. Guests never get one.
+model User {
+  id            String   @id @default(cuid())
+  discordId     String   @unique
+  username      String
+  /// Discord avatar hash, null when the user kept the default one.
+  discordAvatar String?
+  /// Pseudo and Blobatar seed synced with the local profile of the web app.
+  pseudo        String?
+  avatarSeed    String?
+  friendCode    String   @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions         Session[]
+  results          GameResult[]
+  achievements     UserAchievement[]
+  sentRequests     Friendship[]      @relation("FriendshipRequester")
+  receivedRequests Friendship[]      @relation("FriendshipAddressee")
+}
+
+/// Login session; the cookie carries its id signed with SESSION_SECRET.
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+}
+
+/// One finished game as seen by one logged-in participant.
+model GameResult {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomCode    String
+  mode        String
+  score       Int
+  rank        Int
+  playerCount Int
+  roundCount  Int
+  won         Boolean
+  team        String?
+  teamWon     Boolean?
+  playedAt    DateTime @default(now())
+
+  @@index([userId, playedAt])
+}
+
+model UserAchievement {
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  @@id([userId, achievementId])
+}
+
+/// A single row per pair: "pending" until the addressee accepts it.
+model Friendship {
+  id          String   @id @default(cuid())
+  requesterId String
+  requester   User     @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User     @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+}
