@@ -13,6 +13,7 @@ import {
   SignOut,
   Trophy,
   Users,
+  VinylRecord,
 } from "@phosphor-icons/react"
 import { ACHIEVEMENTS, GameMode, type GameHistoryItem } from "@blindmusic/shared"
 import { useAuth } from "@/hooks/useAuth"
@@ -22,6 +23,7 @@ import { AccountQueryKey, accountApi, discordLoginUrl } from "@/utils/accountApi
 import Avatar from "@/components/Avatar"
 import SettingsMenu from "@/components/SettingsMenu"
 import FriendsPanel from "@/components/FriendsPanel"
+import CollectionTab from "@/components/booster/CollectionTab"
 import ProfileStatsBlock from "@/components/ProfileStats"
 import LegalFooter from "@/components/LegalFooter"
 import Modal from "@/components/Modal"
@@ -31,6 +33,7 @@ const TABS = [
   { id: ProfileTab.History, label: "Historique", icon: ClockCounterClockwise },
   { id: ProfileTab.Achievements, label: "Succès", icon: Trophy },
   { id: ProfileTab.Friends, label: "Amis", icon: Users },
+  { id: ProfileTab.Collection, label: "Collection", icon: VinylRecord },
 ]
 
 function formatDate(iso: string): string {
@@ -71,7 +74,7 @@ interface ProfileContentProps {
   loginRedirect: string
 }
 
-/** Profile card, Historique / Succès / Amis tabs and account deletion: shared by the page and the drawer. */
+/** Profile card, Historique / Succès / Amis / Collection tabs and account deletion: shared by the page and the drawer. */
 export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileContentProps) {
   const { user, discordEnabled, loading, logout, deleteAccount } = useAuth()
   const { profile } = useProfile()
@@ -202,6 +205,7 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
             {tab === ProfileTab.History && <HistoryTab />}
             {tab === ProfileTab.Achievements && <AchievementsTab />}
             {tab === ProfileTab.Friends && <FriendsPanel />}
+            {tab === ProfileTab.Collection && <CollectionTab />}
           </div>
 
           <div className="mt-4 text-center">

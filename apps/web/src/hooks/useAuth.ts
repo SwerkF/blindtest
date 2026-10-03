@@ -19,6 +19,8 @@ export function useAuth() {
     queryClient.removeQueries({ queryKey: [AccountQueryKey.Friends] })
     queryClient.removeQueries({ queryKey: [AccountQueryKey.History] })
     queryClient.removeQueries({ queryKey: [AccountQueryKey.Achievements] })
+    queryClient.removeQueries({ queryKey: [AccountQueryKey.Boosters] })
+    queryClient.removeQueries({ queryKey: [AccountQueryKey.Collection] })
   }
 
   const logout = async () => {

@@ -4,6 +4,7 @@ export enum ProfileTab {
   History = "historique",
   Achievements = "succes",
   Friends = "amis",
+  Collection = "collection",
 }
 
 export function readProfileTab(value: string | null | undefined): ProfileTab {
