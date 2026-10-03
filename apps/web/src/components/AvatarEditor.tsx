@@ -72,7 +72,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-pitch/60 p-4 animate-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-pitch/60 p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] animate-fade"
       onClick={onClose}
     >
       <div
@@ -80,23 +80,23 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
         aria-modal="true"
         aria-label="Personnaliser l'avatar"
         onClick={(event) => event.stopPropagation()}
-        className="bg-surface border border-edge rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-xl"
+        className="bg-surface border border-edge rounded-2xl w-full max-w-xl max-h-full sm:max-h-[90vh] overflow-y-auto overscroll-contain shadow-xl"
       >
-        <div className="flex items-center justify-between p-5 border-b border-edge">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-edge">
           <h3 className="font-bold text-ink">Personnaliser l'avatar</h3>
-          <button type="button" onClick={onClose} aria-label="Fermer" className="text-muted hover:text-ink">
+          <button type="button" onClick={onClose} aria-label="Fermer" className="p-2.5 -m-2.5 text-muted hover:text-ink">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-5 flex flex-col gap-5">
+        <div className="p-4 sm:p-5 flex flex-col gap-5">
           <div className="flex flex-col items-center gap-3">
             <Avatar name={encodeAvatar(draft)} size={150} animate="always" />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-center gap-2">
               <button
                 type="button"
                 onClick={() => patch({ seed: crypto.randomUUID() })}
-                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-edge text-ink hover:border-accent hover:text-accent transition-colors"
+                className="flex items-center gap-1.5 text-sm px-3 py-2.5 sm:py-1.5 rounded-lg border border-edge text-ink hover:border-accent hover:text-accent transition-colors"
               >
                 <Shuffle size={15} />
                 Nouveau blob
@@ -112,7 +112,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
                     expression: AvatarExpression.Idle,
                   })
                 }
-                className="text-sm px-3 py-1.5 rounded-lg text-muted hover:text-ink transition-colors"
+                className="text-sm px-3 py-2.5 sm:py-1.5 rounded-lg text-muted hover:text-ink transition-colors"
               >
                 Tout aléatoire
               </button>
@@ -120,7 +120,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
           </div>
 
           <Section title="Forme">
-            <div className="grid grid-cols-6 gap-1.5">
+            <div className="grid grid-cols-4 min-[400px]:grid-cols-6 gap-1.5">
               <Choice active={draft.shape === null} label="Auto" onClick={() => patch({ shape: null })}>
                 <Avatar name={preview({ shape: null })} size={40} />
               </Choice>
@@ -138,7 +138,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
                 type="button"
                 onClick={() => patch({ hue: null })}
                 aria-pressed={draft.hue === null}
-                className={`h-8 px-3 rounded-full border text-xs font-medium transition-colors ${
+                className={`h-10 sm:h-8 px-3 rounded-full border text-xs font-medium transition-colors ${
                   draft.hue === null ? "border-accent text-accent bg-accent/10" : "border-edge text-muted hover:border-muted"
                 }`}
               >
@@ -152,7 +152,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
                   aria-label={`Teinte ${hue}°`}
                   aria-pressed={draft.hue === hue}
                   style={{ backgroundColor: `oklch(0.72 0.14 ${hue})` }}
-                  className={`w-8 h-8 rounded-full transition-transform ${
+                  className={`w-10 h-10 sm:w-8 sm:h-8 rounded-full transition-transform ${
                     draft.hue === hue ? "ring-2 ring-accent ring-offset-2 ring-offset-surface scale-110" : "hover:scale-110"
                   }`}
                 />
@@ -170,7 +170,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
           </Section>
 
           <Section title="Ton">
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="grid grid-cols-4 min-[400px]:grid-cols-5 sm:grid-cols-7 gap-1.5">
               <Choice active={draft.tone === null} label="Auto" onClick={() => patch({ tone: null })}>
                 <Avatar name={preview({ tone: null })} size={36} />
               </Choice>
@@ -183,7 +183,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
           </Section>
 
           <Section title="Expression">
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="grid grid-cols-4 min-[400px]:grid-cols-5 sm:grid-cols-7 gap-1.5">
               {Object.values(AvatarExpression).map((expression) => (
                 <Choice
                   key={expression}
@@ -198,14 +198,14 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
           </Section>
         </div>
 
-        <div className="flex justify-end gap-2 p-5 border-t border-edge">
-          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-muted hover:text-ink">
+        <div className="sticky bottom-0 bg-surface flex justify-end gap-2 p-4 sm:p-5 border-t border-edge">
+          <button type="button" onClick={onClose} className="px-4 py-3 sm:py-2.5 rounded-xl text-sm text-muted hover:text-ink">
             Annuler
           </button>
           <button
             type="button"
             onClick={() => onSave(encodeAvatar(draft))}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-accent text-white hover:opacity-90"
+            className="px-5 py-3 sm:py-2.5 rounded-xl text-sm font-semibold bg-accent text-white hover:opacity-90"
           >
             Valider
           </button>

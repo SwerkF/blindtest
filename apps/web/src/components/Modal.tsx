@@ -28,7 +28,7 @@ export default function Modal({ title, onClose, children, actions, size = "sm" }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-pitch/60 p-4 animate-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-pitch/60 p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] animate-fade"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
@@ -39,7 +39,7 @@ export default function Modal({ title, onClose, children, actions, size = "sm" }
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`w-full ${size === "sm" ? "max-w-sm" : "max-w-lg"} bg-surface border border-edge rounded-2xl shadow-xl p-6 outline-none animate-pop`}
+        className={`w-full ${size === "sm" ? "max-w-sm" : "max-w-lg"} bg-surface border border-edge rounded-2xl shadow-xl p-5 sm:p-6 max-h-full overflow-y-auto overscroll-contain outline-none animate-pop`}
       >
         <div className="flex items-start justify-between gap-4 mb-4">
           <h2 className="text-lg font-bold text-ink">{title}</h2>
@@ -47,13 +47,13 @@ export default function Modal({ title, onClose, children, actions, size = "sm" }
             type="button"
             onClick={onClose}
             aria-label="Fermer"
-            className="p-1 -m-1 rounded-lg text-muted hover:text-ink hover:bg-edge/60 transition-colors"
+            className="p-2.5 -m-2.5 rounded-lg text-muted hover:text-ink hover:bg-edge/60 transition-colors"
           >
             <X size={18} weight="bold" />
           </button>
         </div>
         <div className="text-sm text-ink/85">{children}</div>
-        {actions && <div className="mt-6 flex justify-end gap-2">{actions}</div>}
+        {actions && <div className="mt-6 flex flex-wrap justify-end gap-2 [&>button]:min-h-11 sm:[&>button]:min-h-0">{actions}</div>}
       </div>
     </div>
   )

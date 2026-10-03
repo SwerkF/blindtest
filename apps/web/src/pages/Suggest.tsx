@@ -21,9 +21,9 @@ export default function Suggest() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas flex flex-col items-center justify-center px-4">
+    <div className="min-h-dvh bg-canvas flex flex-col items-center justify-center px-4 py-6">
       <div className="w-full max-w-md">
-        <Link to="/" className="text-muted text-sm hover:text-accent transition-colors block mb-8">
+        <Link to="/" className="text-muted text-sm hover:text-accent transition-colors inline-block py-2 mb-4 sm:mb-6">
           ← Retour
         </Link>
 
@@ -34,16 +34,16 @@ export default function Suggest() {
             <p className="text-muted">On examinera ta playlist avec plaisir.</p>
             <button
               onClick={() => { setSent(false); setName(""); setUrl("") }}
-              className="mt-6 text-accent text-sm hover:underline"
+              className="mt-6 py-2 text-accent text-sm hover:underline"
             >
               Soumettre une autre
             </button>
           </div>
         ) : (
-          <div className="bg-surface rounded-2xl p-8 border border-edge">
+          <div className="bg-surface rounded-2xl p-5 sm:p-8 border border-edge">
             <div className="flex items-center gap-3 mb-6">
-              <MusicNote size={24} weight="duotone" className="text-accent" />
-              <h2 className="text-2xl font-bold text-ink">Suggérer une playlist</h2>
+              <MusicNote size={24} weight="duotone" className="text-accent shrink-0" />
+              <h2 className="text-xl sm:text-2xl font-bold text-ink">Suggérer une playlist</h2>
             </div>
             <div className="flex flex-col gap-4">
               <div>

@@ -15,6 +15,7 @@ import {
   Television,
   Smiley,
   SignOut,
+  X,
 } from "@phosphor-icons/react"
 import type {
   AnimeReveal,
@@ -319,6 +320,9 @@ export default function Game() {
   const [confirmLeave, setConfirmLeave] = useState(false)
   /** Team mode: points kept from players who left mid-game. */
   const [teamBank, setTeamBank] = useState<TeamScores | null>(null)
+  /** Phones and tablets: the chat and reactions live in a bottom drawer. */
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatSeen, setChatSeen] = useState(0)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const guessInputRef = useRef<HTMLInputElement>(null)
@@ -340,6 +344,11 @@ export default function Game() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [chat])
+
+  useEffect(() => {
+    if (chatOpen) setChatSeen(chat.length)
+  }, [chatOpen, chat.length])
+  const unreadChat = chatOpen ? 0 : chat.length - chatSeen
 
   useEffect(() => {
     return onMessage((msg: WsServerMessage) => {
@@ -662,19 +671,33 @@ export default function Game() {
   const ranking = endState ? Object.entries(endState.scores).sort((a, b) => b[1] - a[1]) : []
 
   return (
-    <div className="h-screen bg-canvas grid grid-cols-[290px_1fr_310px] overflow-hidden">
+    <div className="h-dvh bg-canvas flex flex-col lg:grid lg:grid-cols-[290px_1fr_310px] overflow-hidden">
       {/* Joueurs */}
-      <aside className="bg-surface border-r border-edge flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-edge flex items-center justify-between">
-          <h3 className="font-bold text-ink text-sm uppercase tracking-wider">Joueurs</h3>
+      {/* Mobile : bandeau horizontal en haut ; grand écran : colonne de gauche */}
+      <aside className="shrink-0 bg-surface border-b lg:border-b-0 lg:border-r border-edge flex flex-wrap lg:flex-col lg:flex-nowrap overflow-hidden pt-[env(safe-area-inset-top)] lg:pt-0">
+        <div className="order-2 lg:order-none px-1.5 lg:p-4 lg:border-b border-edge flex items-center justify-between">
+          <h3 className="hidden lg:block font-bold text-ink text-sm uppercase tracking-wider">Joueurs</h3>
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            aria-label="Ouvrir le chat et les réactions"
+            className="lg:hidden relative p-3 rounded-xl text-muted hover:text-accent hover:bg-edge/50 transition-colors"
+          >
+            <ChatCircle size={18} weight="duotone" />
+            {unreadChat > 0 && (
+              <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-accent text-white text-[10px] font-bold leading-4 text-center animate-pop">
+                {unreadChat > 9 ? "9+" : unreadChat}
+              </span>
+            )}
+          </button>
           <SettingsMenu />
         </div>
         {teamMode && (
-          <div className="p-3 border-b border-edge">
+          <div className="order-3 lg:order-none w-full px-3 pt-2 lg:p-3 lg:border-b border-edge">
             <TeamScoreboard totals={liveTeamScores} />
           </div>
         )}
-        <ul className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+        <ul className="order-4 lg:order-none w-full lg:flex-1 flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto px-3 pt-2 pb-3 short:pb-2 lg:p-3 snap-x lg:snap-none">
           {listedPlayers.map((p, i) => {
             const total = scores[p.id] ?? 0
             const status = !p.connected
@@ -688,7 +711,7 @@ export default function Game() {
             return (
               <li
                 key={p.id}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 animate-rise hover:brightness-105 ${
+                className={`shrink-0 lg:shrink max-w-[230px] lg:max-w-none snap-start flex items-center gap-2.5 lg:gap-3 px-3 py-2.5 short:py-1.5 rounded-xl transition-all duration-200 animate-rise hover:brightness-105 ${
                   p.id === session.playerId ? "bg-accent/10 border border-accent/20" : "bg-edge/40"
                 } ${p.connected ? "" : "opacity-60"}`}
                 style={teamMode ? { boxShadow: `inset 4px 0 0 ${TEAM_STYLE[p.team].color}` } : undefined}
@@ -736,14 +759,14 @@ export default function Game() {
             )
           })}
         </ul>
-        <div className="p-3 border-t border-edge flex items-center justify-between gap-2">
+        <div className="order-1 lg:order-none flex-1 lg:flex-none pl-3 lg:p-3 lg:border-t border-edge flex items-center justify-between gap-2">
           <p className="text-xs text-muted">
             {round && phase !== GamePhase.End ? `Manche ${round.trackIndex} / ${round.total}` : ""}
           </p>
           <button
             type="button"
             onClick={() => setConfirmLeave(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+            className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-red-500 px-3 py-3 lg:px-2.5 lg:py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
           >
             <SignOut size={14} weight="bold" />
             Quitter
@@ -752,7 +775,7 @@ export default function Game() {
       </aside>
 
       {/* Centre */}
-      <main className="flex flex-col overflow-hidden relative">
+      <main className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
         {/* Réactions qui s'envolent sur la scène */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-20">
           {floaters.map((f) => (
@@ -774,8 +797,8 @@ export default function Game() {
 
         {phase === GamePhase.End && endState ? (
           /* ── Fin de partie ── */
-          <div className="flex-1 overflow-y-auto p-6 animate-fade">
-            <div className="flex flex-col items-center mb-8">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-[max(1rem,env(safe-area-inset-bottom))] animate-fade">
+            <div className="flex flex-col items-center mb-6 sm:mb-8">
               <Trophy size={44} weight="duotone" className="text-accent mb-3 animate-pop" />
               <h2 className="text-3xl font-black text-ink">Partie terminée</h2>
               {endState.teamScores && <TeamVerdict totals={endState.teamScores} />}
@@ -786,7 +809,7 @@ export default function Game() {
                 <div
                   key={id}
                   style={{ animationDelay: `${i * 60}ms` }}
-                  className={`flex items-center gap-4 px-5 py-3.5 rounded-xl animate-rise ${
+                  className={`flex items-center gap-3 sm:gap-4 px-3 sm:px-5 py-3 sm:py-3.5 rounded-xl animate-rise ${
                     i === 0 ? "bg-inverse text-inverse-ink" : "bg-surface border border-edge text-ink"
                   }`}
                 >
@@ -853,7 +876,7 @@ export default function Game() {
               <button
                 type="button"
                 onClick={backToLobby}
-                className="flex items-center gap-2 bg-inverse text-inverse-ink px-6 py-3 rounded-xl font-semibold hover:opacity-90 hover:scale-[1.02] active:scale-100 transition-all"
+                className="w-full sm:w-auto justify-center flex items-center gap-2 bg-inverse text-inverse-ink px-6 py-3 rounded-xl font-semibold hover:opacity-90 hover:scale-[1.02] active:scale-100 transition-all"
               >
                 <ArrowCounterClockwise size={18} weight="bold" />
                 Retour au lobby
@@ -863,7 +886,7 @@ export default function Game() {
         ) : (
           /* ── Partie en cours ── */
           <>
-            <div className="px-6 pt-4 flex flex-col gap-2">
+            <div className="px-3 sm:px-6 pt-3 sm:pt-4 flex flex-col gap-2">
               {/* Pastilles de progression */}
               {totalRounds > 0 && (
                 <div className="flex flex-wrap gap-1.5 justify-center">
@@ -916,7 +939,7 @@ export default function Game() {
                 )}
               </div>
 
-              <div className="h-24 shrink-0 relative">
+              <div className="h-20 sm:h-24 short:h-12 shrink-0 relative">
                 <Visualizer previewUrl={round?.previewUrl ?? null} isPlaying={canGuess} seekTo={seekTo} />
                 {isCountdown && (
                   <div className="absolute inset-0 flex items-center justify-center bg-stage/90 rounded-xl gap-4 animate-fade">
@@ -936,24 +959,24 @@ export default function Game() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 px-6 py-4 flex flex-col">
+            <div className="flex-1 min-h-0 px-3 sm:px-6 py-3 sm:py-4 flex flex-col">
               {reveal ? (
-                <div className="flex-1 min-h-0 flex items-center justify-center gap-6 animate-fade">
+                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 text-center sm:text-left animate-fade">
                   {(reveal.anime?.imageUrl ?? reveal.coverUrl) ? (
                     <img
                       src={reveal.anime?.imageUrl ?? reveal.coverUrl ?? ""}
                       alt=""
-                      className="w-40 h-40 rounded-2xl object-cover shadow-lg shrink-0 animate-pop"
+                      className="w-28 h-28 sm:w-40 sm:h-40 rounded-2xl object-cover shadow-lg shrink-0 animate-pop"
                     />
                   ) : (
-                    <div className="w-40 h-40 rounded-2xl bg-edge flex items-center justify-center shrink-0">
+                    <div className="w-28 h-28 sm:w-40 sm:h-40 rounded-2xl bg-edge flex items-center justify-center shrink-0">
                       <MusicNotes size={40} weight="duotone" className="text-muted" />
                     </div>
                   )}
-                  <div className="min-w-0 flex-1 max-w-md animate-rise">
+                  <div className="min-w-0 sm:flex-1 w-full max-w-md animate-rise">
                     {reveal.anime ? (
                       <>
-                        <p className="font-black text-3xl text-ink leading-tight">{reveal.anime.name}</p>
+                        <p className="font-black text-2xl sm:text-3xl text-ink leading-tight break-words">{reveal.anime.name}</p>
                         <p className="text-accent font-semibold mt-1">{animeCaption(reveal.anime)}</p>
                         <p className="text-muted text-sm mt-1">
                           {reveal.title} — {reveal.artist}
@@ -961,13 +984,13 @@ export default function Game() {
                       </>
                     ) : (
                       <>
-                        <p className="font-black text-3xl text-ink leading-tight">{reveal.title}</p>
+                        <p className="font-black text-2xl sm:text-3xl text-ink leading-tight break-words">{reveal.title}</p>
                         <p className="text-muted text-lg mt-1">{reveal.artist}</p>
                         {reveal.year ? <p className="text-muted/70 text-sm mt-0.5">{reveal.year}</p> : null}
                       </>
                     )}
                     {reveal.lyrics && (
-                      <pre className="mt-3 max-h-28 overflow-y-auto whitespace-pre-wrap font-sans text-xs text-muted leading-relaxed border-l-2 border-edge pl-3">
+                      <pre className="mt-3 max-h-28 overflow-y-auto whitespace-pre-wrap text-left font-sans text-xs text-muted leading-relaxed border-l-2 border-edge pl-3">
                         {reveal.lyrics}
                       </pre>
                     )}
@@ -1013,7 +1036,7 @@ export default function Game() {
                         )}
                       </div>
                     ) : (
-                      <div className="grid grid-cols-3 gap-2 auto-rows-min">
+                      <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 auto-rows-min">
                         {guesses.map((g) => {
                           const hit = g.points > 0
                           const warm = g.matched === GuessMatch.Close
@@ -1058,7 +1081,8 @@ export default function Game() {
               )}
             </div>
 
-            <div className="p-5 pt-3 border-t border-edge bg-surface/60">
+            {/* Barre de saisie collée en bas, au-dessus du clavier sur mobile */}
+            <div className="shrink-0 px-3 sm:px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] border-t border-edge bg-surface/60">
               {(hints[HintKind.Artist] || hints[HintKind.Title]) && (
                 <div className="mb-2.5 flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
                   {hints[HintKind.Artist] && (
@@ -1067,7 +1091,7 @@ export default function Game() {
                       title="Indice artiste"
                     >
                       <Microphone size={15} weight="fill" className="text-amber-500" />
-                      <span className="font-mono font-bold text-ink tracking-[0.25em]">{hints[HintKind.Artist]}</span>
+                      <span className="font-mono font-bold text-ink tracking-[0.25em] break-all">{hints[HintKind.Artist]}</span>
                     </div>
                   )}
                   {hints[HintKind.Title] && (
@@ -1080,12 +1104,12 @@ export default function Game() {
                       ) : (
                         <Lightbulb size={15} weight="fill" className="text-amber-500" />
                       )}
-                      <span className="font-mono font-bold text-ink tracking-[0.25em]">{hints[HintKind.Title]}</span>
+                      <span className="font-mono font-bold text-ink tracking-[0.25em] break-all">{hints[HintKind.Title]}</span>
                     </div>
                   )}
                 </div>
               )}
-              <div className="flex gap-3">
+              <div className="flex gap-2 sm:gap-3">
                 <input
                   ref={guessInputRef}
                   value={guessInput}
@@ -1096,17 +1120,20 @@ export default function Game() {
                   onKeyDown={(e) => e.key === "Enter" && submitGuess()}
                   placeholder={isAnime ? "Nom de l'animé, auteur ou année…" : "Artiste, titre ou année…"}
                   disabled={!canGuess}
-                  className="flex-1 min-w-0 border border-edge bg-surface rounded-xl px-4 py-3 text-ink focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
+                  enterKeyHint="send"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  className="flex-1 min-w-0 border border-edge bg-surface rounded-xl px-3 sm:px-4 py-3 text-base text-ink focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
                 />
                 <button
                   onClick={submitGuess}
                   disabled={!canGuess}
-                  className="shrink-0 bg-inverse text-inverse-ink px-6 py-3 rounded-xl font-semibold hover:opacity-90 hover:scale-[1.02] active:scale-100 transition-all disabled:opacity-40 disabled:hover:scale-100"
+                  className="shrink-0 bg-inverse text-inverse-ink px-4 sm:px-6 py-3 rounded-xl font-semibold hover:opacity-90 hover:scale-[1.02] active:scale-100 transition-all disabled:opacity-40 disabled:hover:scale-100"
                 >
                   Deviner
                 </button>
               </div>
-              <div className="flex gap-4 mt-2 text-xs text-muted">
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-2 text-xs text-muted short:hidden">
                 {isAnime ? (
                   <>
                     <span>Animé {me?.hasFoundTitle ? "✓" : `— ${ANIME_MAX_POINTS} à ${ANIME_MIN_POINTS} pts`}</span>
@@ -1128,11 +1155,26 @@ export default function Game() {
         )}
       </main>
 
-      {/* Chat : reste disponible après la partie */}
-      <aside className="bg-surface border-l border-edge flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-edge flex items-center gap-2">
+      {/* Chat : reste disponible après la partie ; tiroir du bas sur mobile */}
+      {chatOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 bg-pitch/50 animate-fade" onClick={() => setChatOpen(false)} />
+      )}
+      <aside
+        className={`bg-surface border-edge flex-col overflow-hidden lg:static lg:z-auto lg:flex lg:h-auto lg:border-l lg:border-t-0 lg:rounded-none lg:shadow-none lg:animate-none ${
+          chatOpen ? "flex fixed inset-x-0 bottom-0 z-50 h-[75dvh] border-t rounded-t-2xl shadow-xl animate-rise" : "hidden"
+        }`}
+      >
+        <div className="px-4 py-1 lg:py-4 border-b border-edge flex items-center gap-2">
           <ChatCircle size={18} className="text-accent" />
           <h3 className="font-bold text-ink text-sm uppercase tracking-wider">Chat</h3>
+          <button
+            type="button"
+            onClick={() => setChatOpen(false)}
+            aria-label="Fermer le chat"
+            className="lg:hidden ml-auto -mr-2 p-3 rounded-xl text-muted hover:text-ink hover:bg-edge/60 transition-colors"
+          >
+            <X size={18} weight="bold" />
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
@@ -1169,7 +1211,7 @@ export default function Game() {
                 type="button"
                 onClick={() => sendReaction(emoji)}
                 aria-label={`Réagir ${emoji}`}
-                className="aspect-square flex items-center justify-center text-xl rounded-lg hover:bg-edge/70 hover:scale-125 active:scale-95 transition-transform"
+                className="aspect-square min-h-11 lg:min-h-0 flex items-center justify-center text-2xl lg:text-xl rounded-lg hover:bg-edge/70 hover:scale-125 active:scale-95 transition-transform"
               >
                 {emoji}
               </button>
@@ -1177,7 +1219,7 @@ export default function Game() {
           </div>
         </div>
 
-        <div className="p-4 flex items-center gap-2">
+        <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center gap-2">
           <input
             value={chatInput}
             onChange={(e) => {
@@ -1187,12 +1229,13 @@ export default function Game() {
             onKeyDown={(e) => e.key === "Enter" && submitChat()}
             placeholder="Message…"
             maxLength={200}
-            className="flex-1 min-w-0 border border-edge bg-surface rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent transition-colors"
+            enterKeyHint="send"
+            className="flex-1 min-w-0 border border-edge bg-surface rounded-xl px-3 py-2.5 lg:py-2 text-base lg:text-sm text-ink focus:outline-none focus:border-accent transition-colors"
           />
           <button
             onClick={submitChat}
             aria-label="Envoyer"
-            className="shrink-0 w-9 h-9 flex items-center justify-center bg-accent text-white rounded-xl hover:opacity-90 hover:scale-105 active:scale-100 transition-all"
+            className="shrink-0 w-11 h-11 lg:w-9 lg:h-9 flex items-center justify-center bg-accent text-white rounded-xl hover:opacity-90 hover:scale-105 active:scale-100 transition-all"
           >
             <PaperPlaneRight size={15} weight="fill" />
           </button>
