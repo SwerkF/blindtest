@@ -299,3 +299,4 @@ export function parseDeezerPlaylistId(input: string): string | null {
 }
 
 export * from "./account"
+export * from "./avatar"
