@@ -123,8 +123,8 @@ export default function Home() {
     "w-full border-2 border-edge bg-surface rounded-xl px-4 py-3 text-ink font-medium focus:outline-none focus:border-accent transition-colors"
 
   return (
-    <div className="min-h-screen bg-canvas flex flex-col items-center justify-center px-4 py-8 relative">
-      <div className="absolute top-5 right-5">
+    <div className="min-h-dvh bg-canvas flex flex-col items-center justify-center px-4 pt-16 pb-6 sm:py-8 relative">
+      <div className="absolute top-[max(0.75rem,env(safe-area-inset-top))] right-3 sm:top-5 sm:right-5">
         <SettingsMenu />
       </div>
 
@@ -135,22 +135,22 @@ export default function Home() {
         </div>
       )}
 
-      <div className="mb-8 text-center">
+      <div className="mb-6 sm:mb-8 text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
-          <MusicNote size={36} weight="duotone" className="text-accent" />
-          <h1 className="text-5xl font-black tracking-tight text-ink">BLINDTEST</h1>
+          <MusicNote size={36} weight="duotone" className="text-accent shrink-0" />
+          <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-ink">BLINDTEST</h1>
         </div>
-        <p className="text-muted text-sm font-medium tracking-widest uppercase">Devine l'artiste · le titre · l'année</p>
+        <p className="text-muted text-xs sm:text-sm font-medium tracking-wider sm:tracking-widest uppercase">Devine l'artiste · le titre · l'année</p>
       </div>
 
       <div className="w-full max-w-4xl grid md:grid-cols-2 bg-surface border border-edge rounded-3xl shadow-sm overflow-hidden">
         {/* Profil */}
-        <div className="p-8 flex flex-col items-center gap-4 md:border-r border-b md:border-b-0 border-edge">
+        <div className="p-5 sm:p-8 flex flex-col items-center gap-4 md:border-r border-b md:border-b-0 border-edge">
           <Avatar name={profile.avatarSeed} size={140} animate="always" onEdit={() => setEditingAvatar(true)} />
           <button
             type="button"
             onClick={() => setEditingAvatar(true)}
-            className="flex items-center gap-1.5 text-sm text-muted hover:text-accent transition-colors"
+            className="flex items-center gap-1.5 text-sm text-muted hover:text-accent transition-colors py-2 -my-2"
           >
             <PaintBrush size={16} />
             Personnaliser l'avatar
@@ -169,7 +169,7 @@ export default function Home() {
         </div>
 
         {/* Jouer */}
-        <div className="p-8 flex flex-col justify-center gap-5">
+        <div className="p-5 sm:p-8 flex flex-col justify-center gap-5">
           {invitedCode && (
             <p className="text-sm text-muted -mb-1">
               Invitation au salon <span className="font-mono font-bold text-ink">{code}</span>
@@ -247,7 +247,7 @@ export default function Home() {
                   setError("")
                   navigate("/", { replace: true })
                 }}
-                className="text-sm text-muted hover:text-ink transition-colors"
+                className="text-sm text-muted hover:text-ink transition-colors py-2"
               >
                 Créer ma propre partie
               </button>
@@ -258,24 +258,24 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-5 text-sm text-muted">
+      <div className="mt-4 sm:mt-6 flex flex-wrap items-center justify-center gap-x-5 text-sm text-muted">
         {history.length > 0 && (
           <button
             type="button"
             onClick={() => setShowHistory(true)}
-            className="flex items-center gap-2 hover:text-accent transition-colors"
+            className="flex items-center gap-2 py-2.5 hover:text-accent transition-colors"
           >
             <ClockCounterClockwise size={15} />
             Mes dernières parties ({history.length})
           </button>
         )}
-        <Link to="/suggest" className="flex items-center gap-2 hover:text-accent transition-colors">
+        <Link to="/suggest" className="flex items-center gap-2 py-2.5 hover:text-accent transition-colors">
           <LinkIcon size={14} />
           Soumettre une playlist
         </Link>
       </div>
 
-      <LegalFooter className="mt-6" />
+      <LegalFooter className="mt-2 sm:mt-6" />
 
       {editingAvatar && (
         <AvatarEditor
@@ -294,7 +294,7 @@ export default function Home() {
             {history.map((entry) => (
               <li key={`${entry.playedAt}-${entry.code}`}>
                 <details className="bg-canvas/60 border border-edge rounded-xl px-4 py-3">
-                  <summary className="cursor-pointer text-sm text-ink font-medium">
+                  <summary className="cursor-pointer text-sm text-ink font-medium py-1">
                     {formatPlayedAt(entry.playedAt)} · #{entry.rank}/{entry.playerCount} · {entry.score} pts
                   </summary>
                   <ul className="mt-2 flex flex-col gap-1">

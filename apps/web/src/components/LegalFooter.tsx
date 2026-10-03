@@ -3,9 +3,9 @@ import { PUBLISHER } from "@/legal/publisher"
 
 /** "Édité par Kreio" and the legal links, at the bottom of the entry pages. */
 export default function LegalFooter({ className = "" }: { className?: string }) {
-  const link = "hover:text-accent transition-colors"
+  const link = "py-1.5 hover:text-accent transition-colors"
   return (
-    <footer className={`flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted ${className}`}>
+    <footer className={`flex flex-wrap items-center justify-center gap-x-4 gap-y-0 text-xs pb-[env(safe-area-inset-bottom)] text-muted ${className}`}>
       <span>
         Édité par{" "}
         <a href={PUBLISHER.url} target="_blank" rel="noreferrer" className="font-semibold text-ink hover:text-accent">
