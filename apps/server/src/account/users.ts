@@ -15,7 +15,13 @@ export function toPublicUser(user: User): PublicUser {
     pseudo: user.pseudo || user.username,
     avatarSeed: user.avatarSeed,
     discordAvatarUrl: discordAvatarUrl(user.discordId, user.discordAvatar),
+    useDiscordAvatar: user.useDiscordAvatar,
   }
+}
+
+/** Picture shown in lobbies: the Discord one only when the user opted in. */
+export function playerAvatarUrl(user: User): string | null {
+  return user.useDiscordAvatar ? discordAvatarUrl(user.discordId, user.discordAvatar) : null
 }
 
 export function toAccountUser(user: User): AccountUser {

@@ -173,6 +173,10 @@ export interface PlayerPublic {
   connected: boolean
   /** Always set; only shown when the lobby plays in team mode. */
   team: Team
+  /** Logged in with a Discord account. */
+  discord: boolean
+  /** Discord profile picture, when the player chose it over the Blobatar. */
+  avatarUrl: string | null
 }
 
 export interface RoundPublic {

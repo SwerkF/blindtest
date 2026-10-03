@@ -52,6 +52,7 @@ import { appendHistory } from "@/utils/storage"
 import { Cue, playCue } from "@/utils/audio"
 import Visualizer from "@/components/Visualizer"
 import Avatar, { PlayerStatus } from "@/components/Avatar"
+import { DiscordBadge } from "@/components/DiscordIcon"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import Modal from "@/components/Modal"
@@ -728,6 +729,7 @@ export default function Game() {
                     name={p.avatarSeed || p.name}
                     size={52}
                     status={status}
+                    imageUrl={p.avatarUrl}
                     onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
                   />
                   {bubble && (
@@ -740,7 +742,10 @@ export default function Game() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-ink text-sm truncate">{p.name}</p>
+                  <p className="font-semibold text-ink text-sm flex items-center gap-1.5 min-w-0">
+                    <span className="truncate">{p.name}</span>
+                    {p.discord && <DiscordBadge size={13} />}
+                  </p>
                   {status === PlayerStatus.Typing ? (
                     <p className="text-[11px] text-amber-500 mt-1">écrit…</p>
                   ) : (
@@ -814,8 +819,15 @@ export default function Game() {
                   }`}
                 >
                   <span className="text-xl font-black w-7">{i + 1}</span>
-                  <Avatar name={players.find((p) => p.id === id)?.avatarSeed || endState.playerNames[id] || id} size={48} />
-                  <span className="font-semibold flex-1 truncate">{endState.playerNames[id]}</span>
+                  <Avatar
+                    name={players.find((p) => p.id === id)?.avatarSeed || endState.playerNames[id] || id}
+                    size={48}
+                    imageUrl={players.find((p) => p.id === id)?.avatarUrl}
+                  />
+                  <span className="font-semibold flex-1 min-w-0 flex items-center gap-1.5">
+                    <span className="truncate">{endState.playerNames[id]}</span>
+                    {players.find((p) => p.id === id)?.discord && <DiscordBadge />}
+                  </span>
                   {endState.teams?.[id] && (
                     <span
                       title={`Équipe ${TEAM_LABEL[endState.teams[id]]}`}

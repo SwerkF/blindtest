@@ -15,11 +15,12 @@ export default function UserChip({ user, online, subtitle, children }: UserChipP
   const status = online === undefined ? undefined : online ? PlayerStatus.Online : PlayerStatus.Offline
   return (
     <div className="flex items-center gap-3 bg-canvas/60 border border-edge rounded-xl px-3 py-2">
-      {user.avatarSeed ? (
-        <Avatar name={user.avatarSeed} size={40} status={status} />
-      ) : (
-        <img src={user.discordAvatarUrl} alt="" className="w-10 h-10 rounded-full shrink-0" />
-      )}
+      <Avatar
+        name={user.avatarSeed || user.pseudo}
+        size={40}
+        status={status}
+        imageUrl={user.useDiscordAvatar || !user.avatarSeed ? user.discordAvatarUrl : null}
+      />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-ink truncate">{user.pseudo}</p>
         <p className="text-xs text-muted truncate">

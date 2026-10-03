@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { Shuffle, X } from "@phosphor-icons/react"
 import Avatar from "@/components/Avatar"
+import DiscordAvatarToggle from "@/components/DiscordAvatarToggle"
 import {
   AvatarExpression,
   AvatarShape,
@@ -90,6 +91,7 @@ export default function AvatarEditor({ value, onSave, onClose }: AvatarEditorPro
         </div>
 
         <div className="p-4 sm:p-5 flex flex-col gap-5">
+          <DiscordAvatarToggle />
           <div className="flex flex-col items-center gap-3">
             <Avatar name={encodeAvatar(draft)} size={150} animate="always" />
             <div className="flex flex-wrap justify-center gap-2">

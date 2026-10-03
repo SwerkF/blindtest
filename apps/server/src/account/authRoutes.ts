@@ -17,7 +17,14 @@ import {
   unsignValue,
   userFromCookies,
 } from "@/account/session"
-import { AVATAR_SEED_MAX_LENGTH, PSEUDO_MAX_LENGTH, toAccountUser, upsertDiscordUser } from "@/account/users"
+import {
+  AVATAR_SEED_MAX_LENGTH,
+  PSEUDO_MAX_LENGTH,
+  playerAvatarUrl,
+  toAccountUser,
+  upsertDiscordUser,
+} from "@/account/users"
+import { setUserAvatarUrl } from "@/game/engine"
 
 const STATE_TTL_SECONDS = 600
 
@@ -83,10 +90,11 @@ export default async function authRoutes(fastify: FastifyInstance) {
     return { user: user ? toAccountUser(user) : null, discordEnabled: discordEnabled() }
   })
 
-  fastify.patch<{ Body: { pseudo?: unknown; avatarSeed?: unknown } }>("/auth/me", async (req, reply) => {
+  fastify.patch<{ Body: { pseudo?: unknown; avatarSeed?: unknown; useDiscordAvatar?: unknown } }>("/auth/me", async (req, reply) => {
     const user = await requireUser(req, reply)
     if (!user) return
-    const data: { pseudo?: string; avatarSeed?: string } = {}
+    const data: { pseudo?: string; avatarSeed?: string; useDiscordAvatar?: boolean } = {}
+    if (typeof req.body?.useDiscordAvatar === "boolean") data.useDiscordAvatar = req.body.useDiscordAvatar
     if (typeof req.body?.pseudo === "string") {
       const pseudo = req.body.pseudo.trim().slice(0, PSEUDO_MAX_LENGTH)
       if (pseudo) data.pseudo = pseudo
@@ -96,6 +104,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       if (seed) data.avatarSeed = seed
     }
     const updated = await prisma.user.update({ where: { id: user.id }, data })
+    if (updated.useDiscordAvatar !== user.useDiscordAvatar) setUserAvatarUrl(updated.id, playerAvatarUrl(updated))
     return toAccountUser(updated)
   })
 
