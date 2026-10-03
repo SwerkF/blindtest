@@ -8,6 +8,8 @@ import {
   Copy,
   Crown,
   DiscordLogo,
+  LockSimple,
+  LinkSimple,
   SignOut,
   Trophy,
   Users,
@@ -20,6 +22,7 @@ import { AccountQueryKey, accountApi, discordLoginUrl } from "@/utils/accountApi
 import Avatar from "@/components/Avatar"
 import SettingsMenu from "@/components/SettingsMenu"
 import FriendsPanel from "@/components/FriendsPanel"
+import ProfileStatsBlock from "@/components/ProfileStats"
 import LegalFooter from "@/components/LegalFooter"
 import Modal from "@/components/Modal"
 import { ProfileTab, readProfileTab } from "@/utils/profileDrawer"
@@ -73,6 +76,7 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
   const { user, discordEnabled, loading, logout, deleteAccount } = useAuth()
   const { profile } = useProfile()
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState("")
 
@@ -84,6 +88,15 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Erreur")
     }
+  }
+
+  /** Public profile link, shared with a per-player preview card (see nginx.conf). */
+  async function copyProfileLink(userId: string) {
+    try {
+      await navigator.clipboard.writeText(`${location.origin}/u/${userId}`)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 1500)
+    } catch {}
   }
 
   async function copyCode(code: string) {
@@ -140,6 +153,19 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
               >
                 Code ami <span className="font-mono font-bold text-ink tracking-widest">{user.friendCode}</span>
                 {copied ? <Check size={12} weight="bold" className="text-green-600" /> : <Copy size={12} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyProfileLink(user.id)}
+                title="Copier le lien de mon profil public"
+                className="mt-3 ml-2 inline-flex items-center gap-2 text-xs text-muted bg-canvas border border-edge rounded-lg px-2.5 py-1.5 hover:border-accent transition-colors"
+              >
+                {linkCopied ? (
+                  <Check size={12} weight="bold" className="text-green-600" />
+                ) : (
+                  <LinkSimple size={12} weight="bold" />
+                )}
+                {linkCopied ? "Lien copié" : "Partager mon profil"}
               </button>
             </div>
             <button
@@ -224,27 +250,13 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
   )
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="bg-canvas/60 border border-edge rounded-xl px-3 py-2 text-center">
-      <p className="text-xl font-black text-ink">{value}</p>
-      <p className="text-xs text-muted">{label}</p>
-    </div>
-  )
-}
-
 function HistoryTab() {
   const { data, isLoading, isError } = useQuery({ queryKey: [AccountQueryKey.History], queryFn: accountApi.history })
   if (isLoading) return <p className="text-sm text-muted">Chargement…</p>
   if (isError || !data) return <p className="text-sm text-red-500">Impossible de charger l'historique</p>
-  const ratio = data.gamesPlayed ? Math.round((data.wins / data.gamesPlayed) * 100) : 0
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-2">
-        <Stat label="Parties" value={data.gamesPlayed} />
-        <Stat label="Victoires" value={data.wins} />
-        <Stat label="Taux" value={`${ratio} %`} />
-      </div>
+      <ProfileStatsBlock stats={data.stats} />
       {data.items.length === 0 ? (
         <p className="text-sm text-muted">Aucune partie enregistrée pour l'instant : lance-toi !</p>
       ) : (
@@ -258,7 +270,7 @@ function HistoryTab() {
   )
 }
 
-function HistoryRow({ item }: { item: GameHistoryItem }) {
+export function HistoryRow({ item }: { item: GameHistoryItem }) {
   return (
     <li className="flex items-center gap-3 bg-canvas/60 border border-edge rounded-xl px-3 py-2.5">
       <span
@@ -303,6 +315,20 @@ function AchievementsTab() {
       <ul className="grid sm:grid-cols-2 gap-2">
         {ACHIEVEMENTS.map((def) => {
           const at = unlocked.get(def.id)
+          if (def.secret && !at) {
+            return (
+              <li
+                key={def.id}
+                title="Succès secret"
+                className="flex items-center gap-3 border border-dashed border-edge rounded-xl px-3 py-2.5 bg-canvas/40 opacity-60"
+              >
+                <LockSimple size={26} weight="bold" className="shrink-0 text-muted" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">???</p>
+                </div>
+              </li>
+            )
+          }
           return (
             <li
               key={def.id}

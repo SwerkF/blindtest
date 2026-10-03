@@ -4,6 +4,7 @@ import type {
   FriendsResponse,
   HistoryResponse,
   MeResponse,
+  PublicProfileResponse,
   PublicUser,
   UnlockedAchievement,
 } from "@blindmusic/shared"
@@ -14,6 +15,8 @@ export enum AccountQueryKey {
   Friends = "account:friends",
   History = "account:history",
   Achievements = "account:achievements",
+  /** Followed by the user id. */
+  PublicProfile = "account:public-profile",
 }
 
 /** Full-page redirect: the server sends the browser to Discord and back. */
@@ -37,6 +40,8 @@ export const accountApi = {
   history: () => req<HistoryResponse>("/me/history"),
 
   achievements: () => req<UnlockedAchievement[]>("/me/achievements"),
+
+  publicProfile: (userId: string) => req<PublicProfileResponse>(`/users/${encodeURIComponent(userId)}`),
 
   friends: () => req<FriendsResponse>("/friends"),
 

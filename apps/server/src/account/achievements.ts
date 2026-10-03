@@ -1,7 +1,7 @@
 import { AchievementId, GameMode, type RoundOutcome } from "@blindmusic/shared"
 
 export const LIGHTNING_MS = 3000
-const FLAWLESS_MIN_ROUNDS = 5
+export const FLAWLESS_MIN_ROUNDS = 10
 const MARATHON_ROUNDS = 30
 const HISTORIAN_YEARS = 5
 const CENTURY_SCORE = 100
@@ -21,6 +21,10 @@ export interface AchievementContext {
   wins: number
   /** Another participant is an accepted friend. */
   playedWithFriend: boolean
+  /** Swerk (see SWERK_DISCORD_ID) is an accepted friend; never true for Swerk himself. */
+  friendOfSwerk: boolean
+  /** Swerk finished this game in the same lobby; never true for Swerk himself. */
+  playedWithSwerk: boolean
 }
 
 /** A win needs opponents, otherwise solo games would hand it out. */
@@ -28,10 +32,21 @@ export function isWin(rank: number, playerCount: number): boolean {
   return rank === 1 && playerCount >= 2
 }
 
-/** Found "the answer" of a round: artist + title in classic, the anime in anime mode. */
-function foundAnswer(outcome: RoundOutcome | undefined, mode: GameMode): boolean {
-  if (!outcome) return false
-  return mode === GameMode.Anime ? outcome.title : outcome.artist && outcome.title
+/**
+ * "Sans faute" tiers: every round of a game of at least FLAWLESS_MIN_ROUNDS
+ * tracks passes `found`. A round never played (no outcome) breaks the streak.
+ *
+ * Anime mode needs no special case: the engine stores the anime in
+ * `outcome.title` and the singer bonus in `outcome.artist`, so "title" is the
+ * anime, "artist" the singer, and the year stays the year.
+ */
+function flawless(ctx: AchievementContext, found: (o: RoundOutcome) => boolean): boolean {
+  if (ctx.roundCount < FLAWLESS_MIN_ROUNDS) return false
+  for (let i = 0; i < ctx.roundCount; i++) {
+    const outcome = ctx.outcomes[i]
+    if (!outcome || !found(outcome)) return false
+  }
+  return true
 }
 
 const RULES: Record<AchievementId, (ctx: AchievementContext) => boolean> = {
@@ -43,15 +58,17 @@ const RULES: Record<AchievementId, (ctx: AchievementContext) => boolean> = {
   [AchievementId.Unstoppable]: (ctx) => ctx.wins >= 10,
   [AchievementId.Lightning]: (ctx) => ctx.fastestFindMs !== null && ctx.fastestFindMs < LIGHTNING_MS,
   [AchievementId.PerfectRound]: (ctx) => ctx.outcomes.some((o) => o && o.artist && o.title && o.year),
-  [AchievementId.Flawless]: (ctx) =>
-    ctx.roundCount >= FLAWLESS_MIN_ROUNDS &&
-    Array.from({ length: ctx.roundCount }, (_, i) => ctx.outcomes[i]).every((o) => foundAnswer(o, ctx.mode)),
+  [AchievementId.Flawless]: (ctx) => flawless(ctx, (o) => o.title),
+  [AchievementId.FlawlessPerfect]: (ctx) => flawless(ctx, (o) => o.title && o.artist),
+  [AchievementId.FlawlessUltimate]: (ctx) => flawless(ctx, (o) => o.title && o.artist && o.year),
   [AchievementId.Historian]: (ctx) => ctx.outcomes.filter((o) => o?.year).length >= HISTORIAN_YEARS,
   [AchievementId.Century]: (ctx) => ctx.score >= CENTURY_SCORE,
   [AchievementId.Otaku]: (ctx) => ctx.mode === GameMode.Anime && isWin(ctx.rank, ctx.playerCount),
   [AchievementId.Marathon]: (ctx) => ctx.roundCount >= MARATHON_ROUNDS,
   [AchievementId.WithFriends]: (ctx) => ctx.playedWithFriend,
   [AchievementId.TeamPlayer]: (ctx) => ctx.teamWon === true,
+  [AchievementId.SwerkFriend]: (ctx) => ctx.friendOfSwerk,
+  [AchievementId.SwerkGame]: (ctx) => ctx.playedWithSwerk,
 }
 
 /** Achievements this game unlocks, leaving out the ones already owned. */

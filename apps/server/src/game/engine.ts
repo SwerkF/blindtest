@@ -11,6 +11,7 @@ import {
   ANIME_ARTIST_POINTS,
   ANIME_MAX_POINTS,
   ANIME_MIN_POINTS,
+  type SpamKind,
   type LobbySettings,
   type PlayedTrack,
   type PlayerPublic,
@@ -28,6 +29,7 @@ import type { Track } from "@/deezer"
 import { isCloseToAnswer, matchesAnswer } from "@/animeNames"
 import { fetchTrackLyrics } from "@/lyrics"
 import { normalize, similarity } from "@/game/text"
+import { checkSpam, newSpamState, type SpamCheck, type SpamState } from "@/game/spam"
 
 interface PlayerState {
   id: string
@@ -40,8 +42,8 @@ interface PlayerState {
   hasFoundYear: boolean
   yearGuessesLeft: number
   roundPoints: number
-  /** Last reaction time, to keep emote spam in check. */
-  lastReactionAt: number
+  /** Chat and reaction rate limits. */
+  spam: SpamState
   connected: boolean
   dropTimer: ReturnType<typeof setTimeout> | null
   /** One entry per finished round, in play order. */
@@ -53,6 +55,8 @@ interface PlayerState {
   avatarUrl: string | null
   /** Quickest title (or anime) find this game, for achievements. */
   fastestFindMs: number | null
+  /** Time to find the title (or anime) on each round it was found, for profile stats. */
+  titleFindMs: number[]
   send: (msg: WsServerMessage) => void
 }
 
@@ -112,7 +116,7 @@ function newPlayer(
     hasFoundYear: false,
     yearGuessesLeft,
     roundPoints: 0,
-    lastReactionAt: 0,
+    spam: newSpamState(),
     connected: false,
     dropTimer: null,
     outcomes: [],
@@ -120,6 +124,7 @@ function newPlayer(
     userId: null,
     avatarUrl: null,
     fastestFindMs: null,
+    titleFindMs: [],
     send,
   }
 }
@@ -178,6 +183,7 @@ function toPublic(room: Room): PlayerPublic[] {
     connected: p.connected,
     team: p.team,
     discord: p.userId !== null,
+    userId: p.userId,
     avatarUrl: p.avatarUrl,
   }))
 }
@@ -472,6 +478,7 @@ export async function startGame(
     p.score = 0
     p.outcomes = []
     p.fastestFindMs = null
+    p.titleFindMs = []
   }
   // Playing from the countdown onwards, so clients landing on the game page
   // during it are not bounced back to the lobby
@@ -732,6 +739,7 @@ export function restartToLobby(code: string) {
     p.score = 0
     p.outcomes = []
     p.fastestFindMs = null
+    p.titleFindMs = []
     p.hasFoundArtist = false
     p.hasFoundTitle = false
     p.hasFoundBoth = false
@@ -791,16 +799,14 @@ export function processGuess(code: string, playerId: string, text: string): Gues
   return result
 }
 
-const REACTION_COOLDOWN_MS = 400
-
-/** True when the player may send a reaction now (a light anti-spam). */
-export function allowReaction(code: string, playerId: string): boolean {
+/**
+ * Anti-spam for chat messages and reactions: whether this one goes through
+ * (null for an unknown player). See `@/game/spam` for the limits.
+ */
+export function rateLimit(code: string, playerId: string, kind: SpamKind, text?: string): SpamCheck | null {
   const player = rooms.get(code)?.players.get(playerId)
-  if (!player) return false
-  const now = Date.now()
-  if (now - player.lastReactionAt < REACTION_COOLDOWN_MS) return false
-  player.lastReactionAt = now
-  return true
+  if (!player) return null
+  return checkSpam(player.spam, kind, Date.now(), text)
 }
 
 function evaluateGuess(code: string, playerId: string, text: string): GuessResult | null {
@@ -985,6 +991,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
 function recordFind(room: Room, player: PlayerState) {
   const elapsed = Date.now() - room.roundStartedAt
   if (player.fastestFindMs === null || elapsed < player.fastestFindMs) player.fastestFindMs = elapsed
+  player.titleFindMs.push(elapsed)
 }
 
 /** Ties the player to a logged-in account so the game lands in their history. */
@@ -1025,6 +1032,7 @@ export interface GameEndPlayer {
   rank: number
   outcomes: RoundOutcome[]
   fastestFindMs: number | null
+  titleFindMs: number[]
   team: string | null
   teamWon: boolean | null
 }
@@ -1054,6 +1062,7 @@ export function gameSummary(room: Room): GameEndSummary {
         rank: 1 + players.filter((other) => other.score > p.score).length,
         outcomes: [...p.outcomes],
         fastestFindMs: p.fastestFindMs,
+        titleFindMs: [...p.titleFindMs],
         team,
         // A draw counts as neither a win nor a loss
         teamWon: team && winner ? team === winner : null,

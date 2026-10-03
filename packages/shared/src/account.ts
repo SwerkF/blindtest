@@ -11,13 +11,18 @@ export enum AchievementId {
   Unstoppable = "wins_10",
   Lightning = "title_under_3s",
   PerfectRound = "perfect_round",
+  /** Kept from the old 5-track "Sans-faute" so rows unlocked back then still map. */
   Flawless = "flawless_game",
+  FlawlessPerfect = "flawless_perfect",
+  FlawlessUltimate = "flawless_ultimate",
   Historian = "years_5",
   Century = "score_100",
   Otaku = "anime_win",
   Marathon = "marathon",
   WithFriends = "with_friends",
   TeamPlayer = "team_win",
+  SwerkFriend = "swerk_friend",
+  SwerkGame = "swerk_game",
 }
 
 export interface AchievementDef {
@@ -25,6 +30,8 @@ export interface AchievementDef {
   name: string
   description: string
   icon: string
+  /** Hidden in the list (« ??? ») until unlocked. */
+  secret?: boolean
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
@@ -43,9 +50,21 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   },
   {
     id: AchievementId.Flawless,
-    name: "Sans-faute",
-    description: "Trouve la réponse à chaque manche d'une partie d'au moins 5 titres",
+    name: "Sans faute",
+    description: "Trouve le titre à chaque manche d'une partie d'au moins 10 titres",
     icon: "💎",
+  },
+  {
+    id: AchievementId.FlawlessPerfect,
+    name: "Sans faute Perfect",
+    description: "Trouve le titre et l'artiste à chaque manche d'une partie d'au moins 10 titres",
+    icon: "🌟",
+  },
+  {
+    id: AchievementId.FlawlessUltimate,
+    name: "Sans faute Ultimate",
+    description: "Trouve le titre, l'artiste et l'année à chaque manche d'une partie d'au moins 10 titres",
+    icon: "👑",
   },
   { id: AchievementId.Historian, name: "Historien", description: "Trouve 5 années dans une même partie", icon: "📅" },
   { id: AchievementId.Century, name: "Centurion", description: "Marque 100 points dans une partie", icon: "💯" },
@@ -53,6 +72,20 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: AchievementId.Marathon, name: "Marathonien", description: "Termine une partie d'au moins 30 titres", icon: "🏃" },
   { id: AchievementId.WithFriends, name: "Entre amis", description: "Joue une partie avec un ami", icon: "🤝" },
   { id: AchievementId.TeamPlayer, name: "Esprit d'équipe", description: "Gagne une partie en équipe", icon: "🛡️" },
+  {
+    id: AchievementId.SwerkFriend,
+    name: "Ami de Swerk",
+    description: "Compte Swerk parmi tes amis",
+    icon: "🫶",
+    secret: true,
+  },
+  {
+    id: AchievementId.SwerkGame,
+    name: "Partie avec Swerk",
+    description: "Termine une partie dans le même salon que Swerk",
+    icon: "🎤",
+    secret: true,
+  },
 ]
 
 export function achievementDef(id: string): AchievementDef | undefined {
@@ -120,10 +153,80 @@ export interface GameHistoryItem {
   playedAt: string
 }
 
+/**
+ * Profile stats over every saved game. Round stats only cover games saved with
+ * round detail (`roundsTracked`); older games count for games/wins/best score only.
+ */
+export interface ProfileStats {
+  gamesPlayed: number
+  wins: number
+  /** Share of games won, 0–100, rounded. */
+  winRate: number
+  bestScore: number | null
+  /** Rounds that carry detail; round stats are null when it is 0. */
+  roundsTracked: number
+  /**
+   * "Guess moyen": average number of answers found per round, out of 3
+   * (artist, title, year), e.g. 1.4.
+   */
+  averageFound: number | null
+  /** Share of rounds where the title (or the anime) was found, 0–100. */
+  titleRate: number | null
+  /** "Guess perfect": rounds with the artist and the title found. */
+  perfectRounds: number
+  /** "Guess ultimate": rounds with the artist, the title and the year found. */
+  ultimateRounds: number
+  /** Average time to find the title, in milliseconds. */
+  averageTitleMs: number | null
+}
+
 export interface HistoryResponse {
   items: GameHistoryItem[]
   gamesPlayed: number
   wins: number
+  stats: ProfileStats
+}
+
+/** How the viewer of a public profile relates to its owner. */
+export enum FriendshipState {
+  /** The viewer is a guest: no friend button. */
+  Guest = "guest",
+  Self = "self",
+  None = "none",
+  /** The viewer sent a request that is still pending. */
+  Outgoing = "outgoing",
+  /** The profile owner asked the viewer. */
+  Incoming = "incoming",
+  Friends = "friends",
+}
+
+/** What anyone can see of an account. Never carries the Discord id, friend code or sessions. */
+export interface PublicProfileUser {
+  id: string
+  pseudo: string
+  /** Discord display name. */
+  username: string
+  avatarSeed: string | null
+  /** Discord picture, only when the owner chose it over the Blobatar. */
+  avatarUrl: string | null
+  createdAt: string
+}
+
+/** GET /users/:id — public profile (/u/:id page, profile drawer in rooms). */
+export interface PublicProfileResponse {
+  user: PublicProfileUser
+  stats: ProfileStats
+  /** Unlocked achievements only: locked (and secret) ones are never listed. */
+  achievements: UnlockedAchievement[]
+  recentGames: GameHistoryItem[]
+  friendship: FriendshipState
+  /** Pending or accepted row between the viewer and the owner, to accept/cancel/remove it. */
+  friendshipId: string | null
+}
+
+/** Whether an achievement stays hidden until unlocked (when the definition says so). */
+export function isSecretAchievement(def: AchievementDef): boolean {
+  return (def as AchievementDef & { secret?: boolean }).secret === true
 }
 
 export enum FriendRequestOutcome {

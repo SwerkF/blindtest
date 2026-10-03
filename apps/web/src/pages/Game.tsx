@@ -38,6 +38,8 @@ import {
   ErrorCode,
   HintKind,
   REACTIONS,
+  SpamKind,
+  SpamReason,
   TEAMS,
   TEAM_LABEL,
   Team,
@@ -53,10 +55,13 @@ import { Cue, playCue } from "@/utils/audio"
 import Visualizer from "@/components/Visualizer"
 import Avatar, { PlayerStatus } from "@/components/Avatar"
 import { DiscordBadge } from "@/components/DiscordIcon"
+import ProfileName from "@/components/ProfileName"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import Modal from "@/components/Modal"
 import { TEAM_PLURAL, TEAM_STYLE, TeamResult } from "@/utils/teams"
+import { MAX_FLOATERS, getHideReactions } from "@/utils/reactions"
+import { showToast } from "@/utils/toast"
 
 interface ChatMsg {
   id: number
@@ -499,10 +504,29 @@ export default function Game() {
           setTypingIds((prev) => (msg.typing ? new Set(prev).add(msg.playerId) : withoutId(prev, msg.playerId)))
           break
 
+        case "spam:notice": {
+          const wait = Math.max(1, Math.ceil(msg.retryInMs / 1000))
+          const what = msg.kind === SpamKind.Chat ? "messages" : "réactions"
+          showToast({
+            title: "Doucement…",
+            text:
+              msg.reason === SpamReason.Duplicate
+                ? "Message identique ignoré."
+                : `Trop de ${what} d'un coup, réessaie dans ${wait} s.`,
+            icon: "🐢",
+            durationMs: 3000,
+          })
+          break
+        }
+
         case "reaction": {
+          if (msg.playerId !== session?.playerId && getHideReactions()) break
           const key = idRef.current++
           setBubbles((prev) => ({ ...prev, [msg.playerId]: { emoji: msg.emoji, key } }))
-          setFloaters((prev) => [...prev.slice(-11), { key, emoji: msg.emoji, left: 10 + Math.random() * 80 }])
+          // Extra emotes are skipped rather than cutting the ones already in flight
+          setFloaters((prev) =>
+            prev.length >= MAX_FLOATERS ? prev : [...prev, { key, emoji: msg.emoji, left: 10 + Math.random() * 80 }]
+          )
           setTimeout(() => {
             setFloaters((prev) => prev.filter((f) => f.key !== key))
             setBubbles((prev) => {
@@ -715,14 +739,22 @@ export default function Game() {
             const bubble = bubbles[p.id]
             // Ranks restart within each team
             const rank = teamMode ? listedPlayers.slice(0, i).filter((o) => o.team === p.team).length : i
+            const isMe = p.id === session.playerId
             return (
               <li
                 key={p.id}
-                className={`shrink-0 lg:shrink max-w-[230px] lg:max-w-none snap-start flex items-center gap-2.5 lg:gap-3 px-3 py-2.5 short:py-1.5 rounded-xl transition-all duration-200 animate-rise hover:brightness-105 ${
-                  p.id === session.playerId ? "bg-accent/10 border border-accent/20" : "bg-edge/40"
-                } ${p.connected ? "" : "opacity-60"}`}
-                style={teamMode ? { boxShadow: `inset 4px 0 0 ${TEAM_STYLE[p.team].color}` } : undefined}
+                className={`relative shrink-0 lg:shrink max-w-[230px] lg:max-w-none snap-start flex items-center gap-2.5 lg:gap-3 px-3 py-2.5 short:py-1.5 transition-all duration-200 animate-rise hover:brightness-105 ${
+                  teamMode ? "rounded-r-xl pl-4" : "rounded-xl"
+                } ${isMe ? "bg-accent/10 border border-accent/20" : "bg-edge/40"} ${p.connected ? "" : "opacity-60"}`}
               >
+                {teamMode && (
+                  // Straight team stripe over the card's left edge (and its border, if any)
+                  <span
+                    aria-hidden="true"
+                    className={`absolute w-1 ${isMe ? "-left-px -inset-y-px" : "left-0 inset-y-0"}`}
+                    style={{ backgroundColor: TEAM_STYLE[p.team].color }}
+                  />
+                )}
                 <span
                   className={`text-xs font-mono w-4 text-center ${teamMode ? `font-bold ${TEAM_STYLE[p.team].text}` : "text-muted"}`}
                   title={teamMode ? `Équipe ${TEAM_LABEL[p.team]}` : undefined}
@@ -749,7 +781,9 @@ export default function Game() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-ink text-sm flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">{p.name}</span>
+                    <ProfileName userId={p.userId} className="truncate">
+                      {p.name}
+                    </ProfileName>
                     {p.discord && <DiscordBadge size={13} />}
                   </p>
                   {status === PlayerStatus.Typing ? (
@@ -831,7 +865,9 @@ export default function Game() {
                     imageUrl={players.find((p) => p.id === id)?.avatarUrl}
                   />
                   <span className="font-semibold flex-1 min-w-0 flex items-center gap-1.5">
-                    <span className="truncate">{endState.playerNames[id]}</span>
+                    <ProfileName userId={players.find((p) => p.id === id)?.userId} className="truncate">
+                      {endState.playerNames[id]}
+                    </ProfileName>
                     {players.find((p) => p.id === id)?.discord && <DiscordBadge />}
                   </span>
                   {endState.teams?.[id] && (
@@ -870,7 +906,9 @@ export default function Game() {
                   <div className="min-w-0 flex-1">
                     {t.anime ? (
                       <>
-                        <p className="font-semibold text-ink text-sm truncate">{t.anime.name}</p>
+                        <p className="font-semibold text-ink text-sm truncate" title={t.anime.originalName}>
+                          {t.anime.name}
+                        </p>
                         <p className="text-xs text-muted truncate">
                           {animeCaption(t.anime)} · {t.title} — {t.artist}
                         </p>
@@ -995,6 +1033,9 @@ export default function Game() {
                     {reveal.anime ? (
                       <>
                         <p className="font-black text-2xl sm:text-3xl text-ink leading-tight break-words">{reveal.anime.name}</p>
+                        {reveal.anime.originalName && (
+                          <p className="text-muted/70 text-xs italic mt-0.5 break-words">{reveal.anime.originalName}</p>
+                        )}
                         <p className="text-accent font-semibold mt-1">{animeCaption(reveal.anime)}</p>
                         <p className="text-muted text-sm mt-1">
                           {reveal.title} — {reveal.artist}

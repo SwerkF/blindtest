@@ -71,6 +71,19 @@ model GameResult {
   won         Boolean
   team        String?
   teamWon     Boolean?
+  /// Round detail for profile stats (see account/stats.ts). Games saved before
+  /// it was tracked keep roundsTracked = 0 and are left out of round stats.
+  roundsTracked    Int @default(0)
+  artistFound      Int @default(0)
+  titleFound       Int @default(0)
+  yearFound        Int @default(0)
+  /// Rounds with both the artist and the title.
+  perfectRounds    Int @default(0)
+  /// Rounds with the artist, the title and the year.
+  ultimateRounds   Int @default(0)
+  /// Sum and count of the times to find the title, for the average.
+  titleTimeTotalMs Int @default(0)
+  titleTimeCount   Int @default(0)
   playedAt    DateTime @default(now())
 
   @@index([userId, playedAt])

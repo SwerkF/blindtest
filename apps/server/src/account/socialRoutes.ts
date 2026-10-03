@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply } from "fastify"
-import type { Friendship, User } from "@prisma/client"
+import type { Friendship, GameResult, User } from "@prisma/client"
 import {
   FriendRequestOutcome,
   FriendshipStatus,
   GameMode,
   type AchievementId,
   type FriendsResponse,
+  type GameHistoryItem,
   type HistoryResponse,
   type UnlockedAchievement,
 } from "@blindmusic/shared"
@@ -22,6 +23,8 @@ import {
 } from "@/account/friendship"
 import { isOnline, notifyUser } from "@/account/presence"
 import { toPublicUser } from "@/account/users"
+import { syncSwerkFriendAchievement } from "@/account/swerk"
+import { loadProfileStats } from "@/account/stats"
 import { isUserInRoom, rooms } from "@/game/engine"
 
 const HISTORY_LIMIT = 50
@@ -35,7 +38,23 @@ function toRow(friendship: Friendship): FriendshipRow {
   }
 }
 
-function findPair(a: string, b: string) {
+export function toHistoryItem(r: GameResult): GameHistoryItem {
+  return {
+    id: r.id,
+    roomCode: r.roomCode,
+    mode: r.mode === GameMode.Anime ? GameMode.Anime : GameMode.Classic,
+    score: r.score,
+    rank: r.rank,
+    playerCount: r.playerCount,
+    roundCount: r.roundCount,
+    won: r.won,
+    team: r.team,
+    teamWon: r.teamWon,
+    playedAt: r.playedAt.toISOString(),
+  }
+}
+
+export function findPair(a: string, b: string) {
   return prisma.friendship.findFirst({
     where: {
       OR: [
@@ -50,33 +69,23 @@ export default async function socialRoutes(fastify: FastifyInstance) {
   fastify.get("/me/history", async (req, reply): Promise<HistoryResponse | undefined> => {
     const user = await requireUser(req, reply)
     if (!user) return
-    const [rows, gamesPlayed, wins] = await Promise.all([
+    const [rows, stats] = await Promise.all([
       prisma.gameResult.findMany({ where: { userId: user.id }, orderBy: { playedAt: "desc" }, take: HISTORY_LIMIT }),
-      prisma.gameResult.count({ where: { userId: user.id } }),
-      prisma.gameResult.count({ where: { userId: user.id, won: true } }),
+      loadProfileStats(user.id),
     ])
     return {
-      gamesPlayed,
-      wins,
-      items: rows.map((r) => ({
-        id: r.id,
-        roomCode: r.roomCode,
-        mode: r.mode === GameMode.Anime ? GameMode.Anime : GameMode.Classic,
-        score: r.score,
-        rank: r.rank,
-        playerCount: r.playerCount,
-        roundCount: r.roundCount,
-        won: r.won,
-        team: r.team,
-        teamWon: r.teamWon,
-        playedAt: r.playedAt.toISOString(),
-      })),
+      gamesPlayed: stats.gamesPlayed,
+      wins: stats.wins,
+      stats,
+      items: rows.map(toHistoryItem),
     }
   })
 
   fastify.get("/me/achievements", async (req, reply): Promise<UnlockedAchievement[] | undefined> => {
     const user = await requireUser(req, reply)
     if (!user) return
+    // Retroactive « Ami de Swerk » for friendships older than the achievement
+    await syncSwerkFriendAchievement([user.id])
     const rows = await prisma.userAchievement.findMany({ where: { userId: user.id }, orderBy: { unlockedAt: "asc" } })
     return rows.map((r) => ({ id: r.achievementId as AchievementId, unlockedAt: r.unlockedAt.toISOString() }))
   })
@@ -151,6 +160,7 @@ export default async function socialRoutes(fastify: FastifyInstance) {
       case "update":
         await prisma.friendship.update({ where: { id: existing!.id }, data: { status: transition.row.status } })
         notifyUser(target.id, { type: "friend:accepted", from: me })
+        await syncSwerkFriendAchievement([user.id, target.id])
         return { outcome: FriendRequestOutcome.Accepted }
       case "delete":
         return reply.status(400).send({ error: "Action impossible" })
@@ -171,6 +181,7 @@ export default async function socialRoutes(fastify: FastifyInstance) {
     } else if (transition.kind === "update") {
       await prisma.friendship.update({ where: { id: row.id }, data: { status: transition.row.status } })
       notifyUser(targetId, { type: "friend:accepted", from: toPublicUser(user) })
+      await syncSwerkFriendAchievement([user.id, targetId])
     }
     return reply.status(204).send()
   }
