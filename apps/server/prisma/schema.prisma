@@ -124,7 +124,7 @@ model CardPoolEntry {
   id              String   @id @default(cuid())
   isrc            String   @unique
   recordingMbid   String?
-  deezerTrackId   Int      @unique
+  deezerTrackId   BigInt   @unique
   title           String
   artistName      String
   deezerMd5Image  String?

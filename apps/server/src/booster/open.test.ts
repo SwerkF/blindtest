@@ -206,3 +206,24 @@ test("grantDrop : le plafond journalier bloque les packs en trop", async () => {
   const ctx = { playerCount: 4, roundCount: 20, roundDurationSec: 30, score: 100, titleFound: 15, rank: 1 }
   expect(await grantDrop(user.id, game.id, ctx, () => 0, client)).toBeNull()
 })
+
+test("ids Deezer au-delà de 2^31 : le DTO reste un number et se sérialise en JSON", async () => {
+  const BIG = 3_000_000_000
+  const user = await makeUser()
+  await givePacks(user.id, PackRarity.Normal, 1)
+  await client.userCard.deleteMany()
+  await client.cardPoolEntry.deleteMany()
+  for (let i = 0; i < PACK_SIZE; i++) {
+    await client.cardPoolEntry.create({
+      data: { isrc: `BIG${i}`, deezerTrackId: BIG + i, title: `T${i}`, artistName: "A", rarity: CardRarity.Commun, popularityScore: i },
+    })
+  }
+  const opened = await openPack(user.id, PackRarity.Normal, first, client)
+  // JSON.stringify plante sur un bigint : le DTO doit déjà contenir des number
+  const json = JSON.parse(JSON.stringify(opened)) as typeof opened
+  expect(json.cards).toHaveLength(PACK_SIZE)
+  for (const { card } of json.cards) {
+    expect(typeof card.deezerTrackId).toBe("number")
+    expect(card.deezerTrackId).toBeGreaterThanOrEqual(BIG)
+  }
+})

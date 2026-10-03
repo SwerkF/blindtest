@@ -14,6 +14,8 @@ services:
         required: false
     environment:
       DATABASE_URL: "file:/data/dev.db"
+      # Only for a deploy whose schema change `prisma db push` flags as lossy, see apps/server/Dockerfile
+      PRISMA_ACCEPT_DATA_LOSS: "${PRISMA_ACCEPT_DATA_LOSS:-}"
     volumes:
       - db-data:/data
     restart: unless-stopped

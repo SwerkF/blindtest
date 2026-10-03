@@ -33,7 +33,8 @@ export function toCardDto(
 ): CardDto {
   return {
     entryId: entry.id,
-    deezerTrackId: entry.deezerTrackId,
+    // BigInt in the database (recent Deezer ids exceed 2^31) but far below 2^53: a number in the DTO and the JSON
+    deezerTrackId: Number(entry.deezerTrackId),
     title: entry.title,
     artistName: entry.artistName,
     deezerMd5Image: entry.deezerMd5Image,
