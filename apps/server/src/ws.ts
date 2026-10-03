@@ -1,5 +1,14 @@
 import type { FastifyInstance } from "fastify"
-import { ErrorCode, GameMode, GamePhase, isReaction, isTeam, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
+import {
+  ErrorCode,
+  GameMode,
+  GamePhase,
+  SpamKind,
+  isReaction,
+  isTeam,
+  type WsClientMessage,
+  type WsServerMessage,
+} from "@blindmusic/shared"
 import {
   rooms,
   registerSocket,
@@ -15,7 +24,7 @@ import {
   setPreparing,
   appendTracks,
   finishTrackLoading,
-  allowReaction,
+  rateLimit,
   getAccess,
   setAccess,
   removePlayer,
@@ -62,6 +71,15 @@ export default async function wsRoute(fastify: FastifyInstance) {
       if (startsAt) send({ type: "game:start", startsAt })
       const summary = getEndSummary(code)
       if (summary) send(summary)
+    }
+
+    /** Lets a chat message or reaction through, or tells the sender to slow down. */
+    function allowed(kind: SpamKind, text?: string): boolean {
+      const check = rateLimit(code!, playerId!, kind, text)
+      if (!check) return false
+      if (check.ok) return true
+      if (check.notify) send({ type: "spam:notice", kind, reason: check.reason, retryInMs: check.retryInMs })
+      return false
     }
 
     socket.on("message", async (raw: Buffer) => {
@@ -186,7 +204,7 @@ export default async function wsRoute(fastify: FastifyInstance) {
         }
 
         case "reaction": {
-          if (!isReaction(msg.emoji) || !allowReaction(code, playerId)) return
+          if (!isReaction(msg.emoji) || !allowed(SpamKind.Reaction)) return
           const reaction: WsServerMessage = { type: "reaction", playerId, emoji: msg.emoji, at: Date.now() }
           for (const p of room.players.values()) {
             try {
@@ -209,12 +227,13 @@ export default async function wsRoute(fastify: FastifyInstance) {
 
         case "chat": {
           const player = room.players.get(playerId)
-          if (!player) return
+          const text = typeof msg.text === "string" ? msg.text.trim().slice(0, 200) : ""
+          if (!player || !text || !allowed(SpamKind.Chat, text)) return
           const chatMsg: WsServerMessage = {
             type: "chat:message",
             playerId,
             playerName: player.name,
-            text: msg.text.slice(0, 200),
+            text,
             at: Date.now(),
           }
           for (const p of room.players.values()) {

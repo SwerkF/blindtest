@@ -38,6 +38,8 @@ import {
   ErrorCode,
   HintKind,
   REACTIONS,
+  SpamKind,
+  SpamReason,
   TEAMS,
   TEAM_LABEL,
   Team,
@@ -57,6 +59,8 @@ import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import Modal from "@/components/Modal"
 import { TEAM_PLURAL, TEAM_STYLE, TeamResult } from "@/utils/teams"
+import { MAX_FLOATERS, getHideReactions } from "@/utils/reactions"
+import { showToast } from "@/utils/toast"
 
 interface ChatMsg {
   id: number
@@ -499,10 +503,29 @@ export default function Game() {
           setTypingIds((prev) => (msg.typing ? new Set(prev).add(msg.playerId) : withoutId(prev, msg.playerId)))
           break
 
+        case "spam:notice": {
+          const wait = Math.max(1, Math.ceil(msg.retryInMs / 1000))
+          const what = msg.kind === SpamKind.Chat ? "messages" : "réactions"
+          showToast({
+            title: "Doucement…",
+            text:
+              msg.reason === SpamReason.Duplicate
+                ? "Message identique ignoré."
+                : `Trop de ${what} d'un coup, réessaie dans ${wait} s.`,
+            icon: "🐢",
+            durationMs: 3000,
+          })
+          break
+        }
+
         case "reaction": {
+          if (msg.playerId !== session?.playerId && getHideReactions()) break
           const key = idRef.current++
           setBubbles((prev) => ({ ...prev, [msg.playerId]: { emoji: msg.emoji, key } }))
-          setFloaters((prev) => [...prev.slice(-11), { key, emoji: msg.emoji, left: 10 + Math.random() * 80 }])
+          // Extra emotes are skipped rather than cutting the ones already in flight
+          setFloaters((prev) =>
+            prev.length >= MAX_FLOATERS ? prev : [...prev, { key, emoji: msg.emoji, left: 10 + Math.random() * 80 }]
+          )
           setTimeout(() => {
             setFloaters((prev) => prev.filter((f) => f.key !== key))
             setBubbles((prev) => {
