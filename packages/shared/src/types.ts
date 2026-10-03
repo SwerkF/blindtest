@@ -92,7 +92,10 @@ export interface AnimeTheme {
 
 /** What the reveal shows about the anime behind a track. */
 export interface AnimeReveal {
+  /** Best-known name: "Solo Leveling" rather than "Ore dake Level Up na Ken". */
   name: string
+  /** The AnimeThemes (usually romaji) name, when it differs from `name`. */
+  originalName?: string
   themes: AnimeTheme[]
   year: number | null
   season: string | null

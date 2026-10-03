@@ -870,7 +870,9 @@ export default function Game() {
                   <div className="min-w-0 flex-1">
                     {t.anime ? (
                       <>
-                        <p className="font-semibold text-ink text-sm truncate">{t.anime.name}</p>
+                        <p className="font-semibold text-ink text-sm truncate" title={t.anime.originalName}>
+                          {t.anime.name}
+                        </p>
                         <p className="text-xs text-muted truncate">
                           {animeCaption(t.anime)} · {t.title} — {t.artist}
                         </p>
@@ -995,6 +997,9 @@ export default function Game() {
                     {reveal.anime ? (
                       <>
                         <p className="font-black text-2xl sm:text-3xl text-ink leading-tight break-words">{reveal.anime.name}</p>
+                        {reveal.anime.originalName && (
+                          <p className="text-muted/70 text-xs italic mt-0.5 break-words">{reveal.anime.originalName}</p>
+                        )}
                         <p className="text-accent font-semibold mt-1">{animeCaption(reveal.anime)}</p>
                         <p className="text-muted text-sm mt-1">
                           {reveal.title} — {reveal.artist}

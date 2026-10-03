@@ -99,6 +99,35 @@ function knownAliasesFor(title: string): string[] {
   return out
 }
 
+/**
+ * The first alias of the built-in list that is a real name, not an
+ * abbreviation ("Demon Slayer" yes, "SAO" or "Fly" no).
+ */
+export function knownDisplayName(title: string): string | null {
+  for (const alias of knownAliasesFor(title)) {
+    if (normalize(alias).replace(/\s/g, "").length > 5) return alias
+  }
+  return null
+}
+
+export interface AnimeTitles {
+  english?: string | null
+  romaji?: string | null
+}
+
+/**
+ * The name most players know the anime by: the built-in French/English alias
+ * ("Les Chevaliers du Zodiaque"), then the AniList English title ("Solo
+ * Leveling" for "Ore dake Level Up na Ken"), then romaji, then AnimeThemes'.
+ */
+export function bestKnownName(name: string, aniList?: AnimeTitles | null): string {
+  for (const title of [name, aniList?.romaji, aniList?.english]) {
+    const known = title ? knownDisplayName(title) : null
+    if (known) return known
+  }
+  return aniList?.english?.trim() || aniList?.romaji?.trim() || name
+}
+
 export interface AnimeAnswers {
   names: string[]
   acronyms: string[]
