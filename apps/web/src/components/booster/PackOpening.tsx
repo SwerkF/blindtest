@@ -147,7 +147,7 @@ export default function PackOpening({ rarity, stock, onClose }: PackOpeningProps
                     aria-label={`Révéler le vinyle ${i + 1}`}
                     className="w-full bg-surface/90 border border-edge rounded-2xl p-2.5 hover:border-accent transition-colors"
                   >
-                    <span className="block relative w-full aspect-square">
+                    <span className="block relative w-full">
                       <span
                         aria-hidden
                         className="absolute right-0 top-1/2 -translate-y-1/2 w-[78%] aspect-square rounded-full bg-[#17171a]"

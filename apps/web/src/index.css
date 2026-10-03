@@ -422,12 +422,13 @@ body {
   animation: vinyl-flip 0.35s ease-out both;
 }
 
+/* Horizontal only: the vertical centring comes from Tailwind's separate `translate` property */
 @keyframes disc-slide {
   from {
-    transform: translate(-32%, -50%);
+    transform: translateX(-32%);
   }
   to {
-    transform: translate(0, -50%);
+    transform: translateX(0);
   }
 }
 

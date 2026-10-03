@@ -41,7 +41,7 @@ export default function VinylCard({ card, isNew = false, slideDisc = false, clas
 
   return (
     <div className={`flex flex-col gap-1.5 min-w-0 ${className}`}>
-      <div className="relative w-full aspect-square">
+      <div className="relative w-full">
         <div
           aria-hidden
           className={`absolute right-0 top-1/2 -translate-y-1/2 w-[78%] aspect-square rounded-full ${
