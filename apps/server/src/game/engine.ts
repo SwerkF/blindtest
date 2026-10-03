@@ -17,7 +17,12 @@ import {
   type RoundOutcome,
   type RoundPublic,
   type WsServerMessage,
+  type TeamScores,
   LOBBY_PASSWORD_MAX_LENGTH,
+  Team,
+  TEAMS,
+  teamTotals,
+  winningTeam,
 } from "@blindmusic/shared"
 import type { Track } from "@/deezer"
 import { isCloseToAnswer, matchesAnswer } from "@/animeNames"
@@ -41,6 +46,11 @@ interface PlayerState {
   dropTimer: ReturnType<typeof setTimeout> | null
   /** One entry per finished round, in play order. */
   outcomes: RoundOutcome[]
+  team: Team
+  /** Discord account behind this player, null for guests. */
+  userId: string | null
+  /** Quickest title (or anime) find this game, for achievements. */
+  fastestFindMs: number | null
   send: (msg: WsServerMessage) => void
 }
 
@@ -74,6 +84,8 @@ interface Room {
   password: string | null
   /** Whether newcomers may join once the game has started. */
   allowLateJoin: boolean
+  /** Scores of players who left mid-game, kept for their team until the next game. */
+  teamBank: TeamScores
 }
 
 /** Avatar strings carry the seed plus the customisation, see the web avatar codec. */
@@ -84,6 +96,7 @@ function newPlayer(
   name: string,
   avatarSeed: string,
   yearGuessesLeft: number,
+  team: Team,
   send: (msg: WsServerMessage) => void
 ): PlayerState {
   return {
@@ -101,8 +114,28 @@ function newPlayer(
     connected: false,
     dropTimer: null,
     outcomes: [],
+    team,
+    userId: null,
+    fastestFindMs: null,
     send,
   }
+}
+
+function emptyTeamScores(): TeamScores {
+  return { [Team.Blue]: 0, [Team.Red]: 0 }
+}
+
+/** The team with fewer players (blue on a tie), where newcomers are seated. */
+function smallerTeam(room: Room): Team {
+  const counts = emptyTeamScores()
+  for (const p of room.players.values()) counts[p.team]++
+  return counts[Team.Red] < counts[Team.Blue] ? Team.Red : Team.Blue
+}
+
+function teamsOf(room: Room): Record<string, Team> {
+  const out: Record<string, Team> = {}
+  for (const [id, p] of room.players) out[id] = p.team
+  return out
 }
 
 // ponytail: in-memory, single-process; use Redis for multi-instance
@@ -140,6 +173,7 @@ function toPublic(room: Room): PlayerPublic[] {
     hasFoundYear: p.hasFoundYear,
     roundPoints: p.roundPoints,
     connected: p.connected,
+    team: p.team,
   }))
 }
 
@@ -150,6 +184,7 @@ function lobbyUpdate(room: Room): WsServerMessage {
     settings: room.settings,
     phase: room.phase,
     hostId: room.hostId,
+    teamBank: room.teamBank,
   }
 }
 
@@ -227,8 +262,9 @@ export function createRoom(
     preparing: false,
     password: null,
     allowLateJoin: true,
+    teamBank: emptyTeamScores(),
   }
-  room.players.set(hostId, newPlayer(hostId, hostName, avatarSeed, 0, send))
+  room.players.set(hostId, newPlayer(hostId, hostName, avatarSeed, 0, Team.Blue, send))
   rooms.set(code, room)
   return room
 }
@@ -242,12 +278,53 @@ export function addPlayer(
 ): Room | null {
   const room = rooms.get(code)
   if (!room) return null
-  // Late joiners slot in mid-game: they start at zero and play from the current round
+  // Late joiners slot in mid-game: they start at zero and play from the current round,
+  // on whichever team is short of players
   room.players.set(
     playerId,
-    newPlayer(playerId, playerName, avatarSeed, room.settings?.yearGuessAttempts ?? 2, send)
+    newPlayer(playerId, playerName, avatarSeed, room.settings?.yearGuessAttempts ?? 2, smallerTeam(room), send)
   )
   return room
+}
+
+/** Teams are only picked between games, never while a round is running. */
+function canPickTeams(room: Room): boolean {
+  return room.phase === GamePhase.Lobby || room.phase === GamePhase.End
+}
+
+/** A player moves themselves to the other side. */
+export function setTeam(code: string, playerId: string, team: Team): boolean {
+  const room = rooms.get(code)
+  const player = room?.players.get(playerId)
+  if (!room || !player || !canPickTeams(room) || !TEAMS.includes(team)) return false
+  if (player.team === team) return true
+  player.team = team
+  broadcastLobby(code)
+  return true
+}
+
+/** Deals everyone into two teams whose sizes differ by one at most. */
+export function shuffleTeams(code: string, random: () => number = Math.random): boolean {
+  const room = rooms.get(code)
+  if (!room || !canPickTeams(room)) return false
+  const players = [...room.players.values()]
+  for (let i = players.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[players[i], players[j]] = [players[j], players[i]]
+  }
+  // With an odd count, which side gets the extra player is random too
+  const offset = random() < 0.5 ? 0 : 1
+  players.forEach((p, i) => {
+    p.team = TEAMS[(i + offset) % TEAMS.length]
+  })
+  broadcastLobby(code)
+  return true
+}
+
+/** Live team totals, including the points of players who already left. */
+export function getTeamScores(code: string): TeamScores | null {
+  const room = rooms.get(code)
+  return room ? teamTotals(teamsOf(room), scores(room), room.teamBank) : null
 }
 
 export function updateAvatar(code: string, playerId: string, avatarSeed: string) {
@@ -300,6 +377,8 @@ export function removePlayer(code: string, playerId: string) {
   if (!room) return
   const player = room.players.get(playerId)
   if (player?.dropTimer) clearTimeout(player.dropTimer)
+  // Leaving mid-game does not take the points away from the team
+  if (player && room.phase !== GamePhase.Lobby) room.teamBank[player.team] += player.score
   room.players.delete(playerId)
   if (room.players.size === 0) {
     if (room.roundTimer) clearTimeout(room.roundTimer)
@@ -381,9 +460,11 @@ export async function startGame(
   room.preparing = false
   room.currentRoundIndex = 0
   room.roundStartedAt = 0
+  room.teamBank = emptyTeamScores()
   for (const p of room.players.values()) {
     p.score = 0
     p.outcomes = []
+    p.fastestFindMs = null
   }
   // Playing from the countdown onwards, so clients landing on the game page
   // during it are not bounced back to the lobby
@@ -476,6 +557,7 @@ function nextRound(room: Room) {
     room.phase = GamePhase.End
     // The room stays alive so everyone can replay on the same code
     broadcast(room, endMessage(room))
+    notifyGameEnd(room)
   }
 }
 
@@ -600,12 +682,15 @@ function endRound(room: Room) {
 }
 
 function endMessage(room: Room): WsServerMessage {
+  const teamMode = room.settings?.teamMode === true
   return {
     type: "game:end",
     scores: scores(room),
     playerNames: playerNames(room),
     tracks: playedTracks(room),
     outcomes: outcomes(room),
+    teams: teamMode ? teamsOf(room) : undefined,
+    teamScores: teamMode ? teamTotals(teamsOf(room), scores(room), room.teamBank) : undefined,
   }
 }
 
@@ -635,9 +720,11 @@ export function restartToLobby(code: string) {
   room.comboFoundCount = 0
   room.firstBothFoundBy = null
   room.roundLyrics = null
+  room.teamBank = emptyTeamScores()
   for (const p of room.players.values()) {
     p.score = 0
     p.outcomes = []
+    p.fastestFindMs = null
     p.hasFoundArtist = false
     p.hasFoundTitle = false
     p.hasFoundBoth = false
@@ -725,6 +812,7 @@ function evaluateGuess(code: string, playerId: string, text: string): GuessResul
   if (titleMatch) {
     player.hasFoundTitle = true
     pointsEarned += TITLE_POINTS
+    recordFind(room, player)
   }
 
   // Completing the pair tops the round up to the combo value, whether the two
@@ -845,6 +933,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
       room.firstBothFoundBy = player.id
       firstBoth = true
     }
+    recordFind(room, player)
   }
   if (artistMatch) {
     player.hasFoundArtist = true
@@ -874,4 +963,91 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
   }
   endRoundIfAllFound(room)
   return result
+}
+
+function recordFind(room: Room, player: PlayerState) {
+  const elapsed = Date.now() - room.roundStartedAt
+  if (player.fastestFindMs === null || elapsed < player.fastestFindMs) player.fastestFindMs = elapsed
+}
+
+/** Ties the player to a logged-in account so the game lands in their history. */
+export function linkUser(code: string, playerId: string, userId: string | null) {
+  const player = rooms.get(code)?.players.get(playerId)
+  if (player) player.userId = userId
+}
+
+/** Room membership of an account, to check that an inviter is really in the lobby. */
+export function isUserInRoom(code: string, userId: string): boolean {
+  const room = rooms.get(code)
+  if (!room) return false
+  for (const p of room.players.values()) if (p.userId === userId) return true
+  return false
+}
+
+export interface GameEndPlayer {
+  playerId: string
+  userId: string | null
+  name: string
+  score: number
+  /** 1 for the best score, ties share a rank. */
+  rank: number
+  outcomes: RoundOutcome[]
+  fastestFindMs: number | null
+  team: string | null
+  teamWon: boolean | null
+}
+
+export interface GameEndSummary {
+  code: string
+  mode: GameMode
+  roundCount: number
+  players: GameEndPlayer[]
+}
+
+export function gameSummary(room: Room): GameEndSummary {
+  const players = [...room.players.values()]
+  const teamMode = room.settings?.teamMode === true
+  const winner = teamMode ? winningTeam(teamTotals(teamsOf(room), scores(room), room.teamBank)) : null
+  return {
+    code: room.code,
+    mode: room.settings?.mode ?? GameMode.Classic,
+    roundCount: room.tracks.length,
+    players: players.map((p) => {
+      const team = teamMode ? p.team : null
+      return {
+        playerId: p.id,
+        userId: p.userId,
+        name: p.name,
+        score: p.score,
+        rank: 1 + players.filter((other) => other.score > p.score).length,
+        outcomes: [...p.outcomes],
+        fastestFindMs: p.fastestFindMs,
+        team,
+        // A draw counts as neither a win nor a loss
+        teamWon: team && winner ? team === winner : null,
+      }
+    }),
+  }
+}
+
+type GameEndListener = (summary: GameEndSummary) => void
+const gameEndListeners: GameEndListener[] = []
+
+/** Called once per finished game (accounts persist history and achievements from it). */
+export function onGameEnd(listener: GameEndListener): () => void {
+  gameEndListeners.push(listener)
+  return () => {
+    const index = gameEndListeners.indexOf(listener)
+    if (index >= 0) gameEndListeners.splice(index, 1)
+  }
+}
+
+function notifyGameEnd(room: Room) {
+  if (gameEndListeners.length === 0) return
+  const summary = gameSummary(room)
+  for (const listener of gameEndListeners) {
+    try {
+      listener(summary)
+    } catch {}
+  }
 }

@@ -165,11 +165,12 @@ function Terms() {
         <p>
           Le jeu est gratuit et ne demande aucun compte : il suffit de choisir un pseudo et un avatar. Un salon est
           accessible à toute personne qui en connaît le code, sauf si l'hôte l'a protégé par un mot de passe.
+          Se connecter avec Discord est facultatif et permet de garder son historique, ses succès et ses amis.
         </p>
         <p>
           Le service est fourni « en l'état », sans garantie de disponibilité. Il peut être interrompu, modifié ou
-          arrêté à tout moment, notamment pour maintenance. Les parties ne sont pas sauvegardées sur nos serveurs : un
-          salon disparaît quand tous ses joueurs l'ont quitté.
+          arrêté à tout moment, notamment pour maintenance. Un salon disparaît quand tous ses joueurs l'ont quitté ;
+          seuls les résultats des joueurs connectés avec Discord sont conservés dans leur historique.
         </p>
       </Section>
 
@@ -226,7 +227,7 @@ function Privacy() {
           . Contact : <Contact />.
         </p>
         <p>
-          Le principe du jeu est d'en collecter le moins possible : pas de compte, pas d'adresse e-mail, pas de
+          Le principe du jeu est d'en collecter le moins possible : compte facultatif, pas d'adresse e-mail, pas de
           publicité, pas de mesure d'audience ni de cookie de suivi.
         </p>
       </Section>
@@ -254,6 +255,24 @@ function Privacy() {
         </p>
       </Section>
 
+      <Section title="Compte Discord (facultatif)">
+        <p>
+          Si vous choisissez de vous connecter avec Discord, nous recevons uniquement votre identifiant, votre nom et
+          votre image de profil Discord (autorisation « identify », sans adresse e-mail ni accès à vos serveurs ou
+          messages). Nous enregistrons alors, en base de données :
+        </p>
+        <ul className="list-disc pl-5 flex flex-col gap-1">
+          <li>ces informations Discord, votre pseudo, votre avatar et votre code ami ;</li>
+          <li>le résultat de vos parties (date, mode, score, rang) et les succès débloqués ;</li>
+          <li>vos amis et demandes d'amis, et une session de connexion valable 30 jours.</li>
+        </ul>
+        <p>
+          Vos amis voient votre pseudo, votre avatar, votre nom Discord et si vous êtes en ligne. Ces données sont
+          conservées tant que le compte existe ; vous pouvez le supprimer à tout moment depuis votre profil, ce qui
+          efface tout ce qui précède. <strong>Base légale</strong> : votre consentement, donné en vous connectant.
+        </p>
+      </Section>
+
       <Section title="Données techniques">
         <p>
           Comme tout serveur web, le serveur enregistre des journaux techniques (adresse IP, date, page demandée) pour
@@ -263,7 +282,11 @@ function Privacy() {
       </Section>
 
       <Section title="Stockage dans votre navigateur">
-        <p>Le site n'utilise pas de cookie. Il enregistre dans votre navigateur (stockage local) :</p>
+        <p>
+          Le site n'utilise pas de cookie de suivi. Seul un cookie de session, strictement nécessaire, est déposé si
+          vous vous connectez avec Discord (et un cookie temporaire pendant la connexion). Le site enregistre aussi
+          dans votre navigateur (stockage local) :
+        </p>
         <ul className="list-disc pl-5 flex flex-col gap-1">
           <li>votre pseudo et votre avatar, pour ne pas les ressaisir ;</li>
           <li>l'historique de vos 20 dernières parties (rang, score, titres joués) ;</li>
@@ -292,6 +315,10 @@ function Privacy() {
             les serveurs de Google.
           </li>
           <li>
+            <Ext href="https://discord.com/privacy">Discord</Ext> (États-Unis) : uniquement si vous vous connectez ;
+            les images de profil Discord sont chargées depuis ses serveurs.
+          </li>
+          <li>
             AnimeThemes, <Ext href="https://anilist.co">AniList</Ext> et lyrics.ovh sont interrogés par notre
             serveur, sans aucune donnée vous concernant.
           </li>
@@ -308,17 +335,17 @@ function Privacy() {
 
       <Section title="Sécurité">
         <p>
-          Les échanges avec le site sont chiffrés (TLS). Aucune donnée de partie n'étant enregistrée, rien n'est
-          conservé au-delà de la vie d'un salon.
+          Les échanges avec le site sont chiffrés (TLS). Sans compte, rien n'est conservé au-delà de la vie d'un
+          salon. Le cookie de session est signé, inaccessible aux scripts de la page et révocable à la déconnexion.
         </p>
       </Section>
 
       <Section title="Vos droits">
         <p>
           Conformément au RGPD et à la loi Informatique et Libertés, vous disposez d'un droit d'accès, de
-          rectification, d'effacement, d'opposition et de limitation sur vos données. Comme presque rien n'est
-          conservé, la plupart de ces demandes se règlent en quittant la partie ou en vidant le stockage de votre
-          navigateur. Pour toute autre demande : <Contact />.
+          rectification, d'effacement, d'opposition et de limitation sur vos données. Sans compte, la plupart de ces
+          demandes se règlent en quittant la partie ou en vidant le stockage de votre navigateur ; avec un compte,
+          vous pouvez le supprimer depuis votre profil. Pour toute autre demande : <Contact />.
         </p>
         <p>
           Vous pouvez aussi introduire une réclamation auprès de la{" "}
@@ -344,10 +371,10 @@ const TITLES: Record<LegalDoc, string> = {
 
 export default function Legal({ doc }: { doc: LegalDoc }) {
   return (
-    <div className="min-h-screen bg-canvas px-4 py-10">
+    <div className="min-h-dvh bg-canvas px-4 pt-4 pb-8 sm:py-10">
       <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <Link to="/" className="flex items-center gap-2 text-sm text-muted hover:text-accent transition-colors">
+        <div className="flex items-center justify-between mb-4 sm:mb-8">
+          <Link to="/" className="flex items-center gap-2 py-2.5 text-sm text-muted hover:text-accent transition-colors">
             <ArrowLeft size={16} weight="bold" />
             <MusicNote size={18} weight="duotone" className="text-accent" />
             {SITE.name}
@@ -355,13 +382,13 @@ export default function Legal({ doc }: { doc: LegalDoc }) {
           <SettingsMenu />
         </div>
 
-        <nav className="flex flex-wrap gap-2 mb-8">
+        <nav className="flex flex-wrap gap-2 mb-6 sm:mb-8">
           {TABS.map((tab) => (
             <NavLink
               key={tab.doc}
               to={`/${tab.doc}`}
               className={({ isActive }) =>
-                `px-3 py-1.5 rounded-xl text-sm font-semibold border transition-colors ${
+                `px-3 py-2.5 sm:py-1.5 rounded-xl text-sm font-semibold border transition-colors ${
                   isActive ? "bg-accent text-white border-accent" : "bg-surface border-edge text-muted hover:text-ink"
                 }`
               }
@@ -371,8 +398,8 @@ export default function Legal({ doc }: { doc: LegalDoc }) {
           ))}
         </nav>
 
-        <article className="bg-surface border border-edge rounded-2xl p-6 md:p-8">
-          <h1 className="text-2xl font-black text-ink mb-1">{TITLES[doc]}</h1>
+        <article className="bg-surface border border-edge rounded-2xl p-5 md:p-8 break-words">
+          <h1 className="text-xl sm:text-2xl font-black text-ink mb-1">{TITLES[doc]}</h1>
           <p className="text-xs text-muted mb-8">Dernière mise à jour : {LEGAL_UPDATED_AT}</p>
           {doc === LegalDoc.Notice && <Notice />}
           {doc === LegalDoc.Terms && <Terms />}

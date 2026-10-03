@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Check, GearSix } from "@phosphor-icons/react"
 import { PALETTES, getPalette, setPalette, type Palette } from "@/utils/palette"
 import ThemeToggle from "@/components/ThemeToggle"
+import AccountMenuSection from "@/components/AccountMenuSection"
 
 /** Gear button opening the site look settings: colour theme and dark mode. */
 export default function SettingsMenu() {
@@ -37,7 +38,7 @@ export default function SettingsMenu() {
         onClick={() => setOpen((o) => !o)}
         aria-label="Paramètres d'affichage"
         aria-expanded={open}
-        className={`p-2 rounded-xl text-muted hover:text-accent hover:bg-edge/50 transition-all ${
+        className={`p-3 lg:p-2 rounded-xl text-muted hover:text-accent hover:bg-edge/50 transition-all ${
           open ? "text-accent bg-edge/50 rotate-45" : ""
         }`}
       >
@@ -45,7 +46,7 @@ export default function SettingsMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-30 w-64 rounded-2xl border border-edge bg-surface shadow-xl p-4 animate-pop">
+        <div className="absolute right-0 top-full mt-2 z-30 w-64 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-edge bg-surface shadow-xl p-4 animate-pop">
           <p className="text-xs text-muted font-medium uppercase tracking-wider mb-3">Thème</p>
           <div className="grid grid-cols-3 gap-2">
             {PALETTES.map((p) => {
@@ -55,7 +56,7 @@ export default function SettingsMenu() {
                   key={p.id}
                   type="button"
                   onClick={() => pick(p.id)}
-                  className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border transition-colors ${
+                  className={`flex flex-col items-center gap-1.5 p-2 min-h-11 rounded-xl border transition-colors ${
                     active ? "border-accent bg-accent/5" : "border-edge hover:border-muted"
                   }`}
                 >
@@ -74,6 +75,7 @@ export default function SettingsMenu() {
             <span className="text-xs text-muted font-medium uppercase tracking-wider">Mode sombre</span>
             <ThemeToggle />
           </div>
+          <AccountMenuSection onNavigate={() => setOpen(false)} />
         </div>
       )}
     </div>

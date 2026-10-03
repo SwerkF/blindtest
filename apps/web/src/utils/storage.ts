@@ -1,3 +1,6 @@
+import { isTeam, Team } from "@blindmusic/shared"
+import { TeamResult } from "@/utils/teams"
+
 export interface UserProfile {
   name: string
   avatarSeed: string
@@ -16,6 +19,15 @@ export interface GameHistoryEntry {
   score: number
   playerCount: number
   tracks: HistoryTrack[]
+  /** Team mode only: the side played for and how it ended. */
+  team?: HistoryTeam
+}
+
+export interface HistoryTeam {
+  team: Team
+  result: TeamResult
+  blue: number
+  red: number
 }
 
 enum StorageKey {
@@ -53,10 +65,25 @@ export function saveProfile(profile: UserProfile) {
   localStorage.setItem(StorageKey.Profile, JSON.stringify(profile))
 }
 
+export const PROFILE_CHANGED_EVENT = "blindtest:profile-changed"
+
+/** Saves a profile coming from elsewhere (the account) and tells mounted useProfile hooks. */
+export function applyProfile(profile: UserProfile) {
+  saveProfile(profile)
+  window.dispatchEvent(new CustomEvent(PROFILE_CHANGED_EVENT))
+}
+
 function readTrack(value: unknown): HistoryTrack | null {
   if (!isRecord(value)) return null
   if (typeof value.title !== "string" || typeof value.artist !== "string" || typeof value.year !== "number") return null
   return { title: value.title, artist: value.artist, year: value.year }
+}
+
+function readTeam(value: unknown): HistoryTeam | undefined {
+  if (!isRecord(value) || !isTeam(value.team)) return undefined
+  const result = Object.values(TeamResult).find((r) => r === value.result)
+  if (!result || typeof value.blue !== "number" || typeof value.red !== "number") return undefined
+  return { team: value.team, result, blue: value.blue, red: value.red }
 }
 
 function readEntry(value: unknown): GameHistoryEntry | null {
@@ -78,6 +105,7 @@ function readEntry(value: unknown): GameHistoryEntry | null {
     score: value.score,
     playerCount: value.playerCount,
     tracks,
+    team: readTeam(value.team),
   }
 }
 

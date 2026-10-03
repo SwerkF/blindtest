@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import { ErrorCode, GameMode, GamePhase, isReaction, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
+import { ErrorCode, GameMode, GamePhase, isReaction, isTeam, type WsClientMessage, type WsServerMessage } from "@blindmusic/shared"
 import {
   rooms,
   registerSocket,
@@ -19,6 +19,8 @@ import {
   getAccess,
   setAccess,
   removePlayer,
+  setTeam,
+  shuffleTeams,
 } from "@/game/engine"
 import { fetchTrackPool, pickRandomTracks } from "@/deezer"
 import { streamAnimeTracks } from "@/anime"
@@ -162,6 +164,18 @@ export default async function wsRoute(fastify: FastifyInstance) {
         case "lobby:access": {
           if (room.hostId !== playerId) return
           setAccess(code, String(msg.password ?? ""), Boolean(msg.allowLateJoin))
+          break
+        }
+
+        case "team:join": {
+          if (!isTeam(msg.team)) return
+          setTeam(code, playerId, msg.team)
+          break
+        }
+
+        case "team:shuffle": {
+          if (room.hostId !== playerId) return
+          shuffleTeams(code)
           break
         }
 

@@ -1,20 +1,26 @@
-import { useState } from "react"
-import { loadProfile, saveProfile, type UserProfile } from "@/utils/storage"
+import { useEffect, useState } from "react"
+import { PROFILE_CHANGED_EVENT, loadProfile, saveProfile, type UserProfile } from "@/utils/storage"
+import { pushProfileToAccount } from "@/utils/accountSync"
 
 export function useProfile() {
   const [profile, setProfile] = useState<UserProfile>(loadProfile)
 
-  const setName = (name: string) => {
-    const next = { ...profile, name }
+  // The Discord account may replace the local profile after login
+  useEffect(() => {
+    const reload = () => setProfile(loadProfile())
+    window.addEventListener(PROFILE_CHANGED_EVENT, reload)
+    return () => window.removeEventListener(PROFILE_CHANGED_EVENT, reload)
+  }, [])
+
+  const update = (next: UserProfile) => {
     setProfile(next)
     saveProfile(next)
+    pushProfileToAccount(next)
   }
 
-  const setAvatar = (avatarSeed: string) => {
-    const next = { ...profile, avatarSeed }
-    setProfile(next)
-    saveProfile(next)
-  }
+  const setName = (name: string) => update({ ...profile, name })
+
+  const setAvatar = (avatarSeed: string) => update({ ...profile, avatarSeed })
 
   return { profile, setName, setAvatar }
 }

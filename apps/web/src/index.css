@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* Phone with the keyboard open (or landscape): squeeze the game chrome */
+@custom-variant short (@media (max-width: 1023.98px) and (max-height: 560px));
 
 @theme {
   --font-sans: "Outfit", sans-serif;
@@ -185,6 +187,33 @@ body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Keep content clear of the notch / rounded corners in landscape (viewport-fit=cover) */
+#root {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Touch: no grey flash on tap, no double-tap zoom delay on controls */
+body {
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: clip;
+}
+
+a,
+button,
+input,
+label,
+select,
+summary,
+textarea {
+  touch-action: manipulation;
 }
 
 body {

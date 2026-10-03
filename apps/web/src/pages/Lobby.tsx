@@ -13,6 +13,9 @@ import {
   CircleNotch,
   LockSimple,
   SignOut,
+  Shuffle,
+  UsersThree,
+  Warning,
 } from "@phosphor-icons/react"
 import {
   ErrorCode,
@@ -22,6 +25,9 @@ import {
   MAX_ROUND_DURATION,
   MAX_TRACK_COUNT,
   TRACK_COUNT_STEP,
+  TEAMS,
+  TEAM_LABEL,
+  Team,
   parseDeezerPlaylistId,
   type DeezerPlaylistMeta,
   type LobbySettings,
@@ -34,6 +40,8 @@ import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import LegalFooter from "@/components/LegalFooter"
+import { TEAM_STYLE } from "@/utils/teams"
+import InviteFriendsButton from "@/components/InviteFriendsButton"
 
 const DEFAULT_SETTINGS: LobbySettings = {
   mode: GameMode.Classic,
@@ -46,6 +54,7 @@ const DEFAULT_SETTINGS: LobbySettings = {
   showLyrics: false,
   showHint: true,
   showArtistHint: true,
+  teamMode: false,
 }
 
 function normalizeSettings(settings: LobbySettings): LobbySettings {
@@ -277,6 +286,18 @@ export default function Lobby() {
     send({ type: "player:avatar", avatarSeed })
   }
 
+  function joinTeam(team: Team) {
+    send({ type: "team:join", team })
+  }
+
+  function shuffleTeams() {
+    if (!isHostRef.current) return
+    send({ type: "team:shuffle" })
+  }
+
+  const teamMode = settings.teamMode === true
+  const emptyTeam = teamMode && players.length > 0 && TEAMS.some((team) => !players.some((p) => p.team === team))
+
   function handleStart() {
     if (!playlistCount() || preparing) return
     setError("")
@@ -312,45 +333,46 @@ export default function Lobby() {
   if (!session) return <Navigate to={`/join/${code}`} replace />
 
   return (
-    <div className="min-h-screen bg-canvas px-4 py-6 lg:py-8">
+    <div className="min-h-dvh bg-canvas px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:py-6 lg:py-8">
       <div className="w-full max-w-[1400px] mx-auto">
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <p className="text-muted text-sm font-medium uppercase tracking-widest mb-1">Code du salon</p>
-            <div className="flex items-center gap-3">
-              <span className="text-5xl font-black text-ink tracking-widest font-mono">{code}</span>
+        <div className="flex items-start justify-between gap-3 mb-6">
+          <div className="min-w-0">
+            <p className="text-muted text-xs sm:text-sm font-medium uppercase tracking-widest mb-1">Code du salon</p>
+            <div className="flex items-center gap-1 sm:gap-3">
+              <span className="text-4xl sm:text-5xl font-black text-ink tracking-wider sm:tracking-widest font-mono">{code}</span>
               <button
                 onClick={copyCode}
                 aria-label="Copier le code"
-                className="text-muted hover:text-accent transition-colors p-1"
+                className="text-muted hover:text-accent transition-colors p-3 sm:p-1"
               >
                 {copied === "code" ? <Check size={20} /> : <Copy size={20} />}
               </button>
             </div>
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => void shareInvite()}
-                className="flex items-center gap-2 text-sm font-semibold bg-accent text-white px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
+                className="flex items-center gap-2 text-sm font-semibold bg-accent text-white px-4 py-3 sm:py-2 rounded-xl hover:opacity-90 transition-opacity"
               >
                 {copied === "link" ? <Check size={16} weight="bold" /> : <ShareNetwork size={16} weight="bold" />}
                 {copied === "link" ? "Lien copié !" : "Inviter des amis"}
               </button>
+              <InviteFriendsButton code={code ?? ""} />
               <button
                 type="button"
                 onClick={leaveLobby}
-                className="inline-flex items-center gap-2 text-sm font-semibold text-muted hover:text-red-500 px-3 py-2 rounded-xl transition-colors"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-muted hover:text-red-500 px-3 py-3 sm:py-2 rounded-xl transition-colors"
               >
                 <SignOut size={16} weight="bold" />
                 Quitter
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-2 text-sm" title={connected ? "Connecté" : "Connexion..."}>
               <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-muted"}`} />
-              <span className="text-muted">{connected ? "Connecté" : "Connexion..."}</span>
+              <span className="text-muted hidden sm:inline">{connected ? "Connecté" : "Connexion..."}</span>
             </div>
             <SettingsMenu />
           </div>
@@ -383,7 +405,7 @@ export default function Lobby() {
                   type="button"
                   onClick={() => switchMode(option.mode)}
                   disabled={!isHost}
-                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all disabled:cursor-default ${
+                  className={`flex items-center gap-2 sm:gap-3 p-3 rounded-xl border text-left transition-all disabled:cursor-default ${
                     active
                       ? "border-accent bg-accent/5 text-accent"
                       : "border-edge bg-surface text-muted hover:border-muted disabled:hover:border-edge"
@@ -408,7 +430,7 @@ export default function Lobby() {
 
         {/* Playlists */}
         <section className="mb-6">
-          <div className="flex items-baseline justify-between mb-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 mb-3">
             <h3 className="font-semibold text-ink flex items-center gap-2">
               <MusicNotes size={18} className="text-accent" />
               Playlists
@@ -418,7 +440,7 @@ export default function Lobby() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {playlists?.map((p) => {
               const active = settings.playlistIds.includes(p.id)
               return (
@@ -478,7 +500,7 @@ export default function Lobby() {
                       onClick={() => removeCustom(id)}
                       aria-label="Retirer la playlist"
                       title="Retirer la playlist"
-                      className="text-muted hover:text-red-500 transition-colors shrink-0"
+                      className="p-2 -m-2 text-muted hover:text-red-500 transition-colors shrink-0"
                     >
                       <X size={15} weight="bold" />
                     </button>
@@ -502,7 +524,7 @@ export default function Lobby() {
                 value={playlistUrl}
                 onChange={(event) => setPlaylistUrl(event.target.value)}
                 placeholder="https://www.deezer.com/playlist/..."
-                className="flex-1 min-w-0 border-2 border-edge rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+                className="flex-1 min-w-0 border-2 border-edge rounded-xl px-4 py-2.5 text-base sm:text-sm text-ink focus:outline-none focus:border-accent"
               />
               <button
                 type="submit"
@@ -519,37 +541,87 @@ export default function Lobby() {
         {/* Colonnes 2 et 3 : empilées sur écran moyen, côte à côte sur grand écran */}
         <div className="flex flex-col gap-6 min-w-0 xl:contents">
           {/* Joueurs */}
-          <div className="bg-surface rounded-2xl p-5 border border-edge">
+          <div className="bg-surface rounded-2xl p-4 sm:p-5 border border-edge">
             <div className="flex items-center gap-2 mb-4">
               <Users size={18} className="text-accent" />
               <h3 className="font-semibold text-ink">Joueurs ({players.length})</h3>
+              {teamMode && isHost && (
+                <button
+                  type="button"
+                  onClick={shuffleTeams}
+                  className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-accent px-2 py-1 rounded-lg transition-colors"
+                >
+                  <Shuffle size={14} weight="bold" />
+                  Équipes aléatoires
+                </button>
+              )}
             </div>
+            {teamMode ? (
+              <div className="flex flex-col gap-3">
+                {TEAMS.map((team) => {
+                  const members = players.filter((p) => p.team === team)
+                  const mine = players.find((p) => p.id === session.playerId)?.team === team
+                  return (
+                    <div key={team} className={`rounded-xl border p-3 ${TEAM_STYLE[team].border} ${TEAM_STYLE[team].soft}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${TEAM_STYLE[team].dot}`} />
+                        <span className={`text-sm font-bold ${TEAM_STYLE[team].text}`}>
+                          Équipe {TEAM_LABEL[team]} ({members.length})
+                        </span>
+                        {!mine && (
+                          <button
+                            type="button"
+                            onClick={() => joinTeam(team)}
+                            className={`ml-auto text-xs font-semibold px-2.5 py-1 rounded-lg text-white hover:opacity-90 transition-opacity ${TEAM_STYLE[team].bg}`}
+                          >
+                            Rejoindre
+                          </button>
+                        )}
+                      </div>
+                      <ul className="flex flex-col gap-2">
+                        {members.map((p) => (
+                          <PlayerRow
+                            key={p.id}
+                            player={p}
+                            isHost={p.id === hostId}
+                            isMe={p.id === session.playerId}
+                            onEdit={() => setEditingAvatar(true)}
+                          />
+                        ))}
+                        {members.length === 0 && <li className="text-muted text-xs">Personne pour l'instant</li>}
+                      </ul>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
             <ul className="flex flex-col gap-2">
               {players.map((p, i) => (
                 <li key={p.id} className={`flex items-center gap-3 ${p.connected ? "" : "opacity-60"}`}>
-                  <span className="text-xs text-muted w-4">{i + 1}</span>
+                  <span className="text-xs text-muted w-4 shrink-0">{i + 1}</span>
                   <Avatar
                     name={p.avatarSeed || p.name}
                     size={48}
                     status={p.connected ? PlayerStatus.Online : PlayerStatus.Offline}
                     onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
                   />
-                  <span className="font-medium text-ink">{p.name}</span>
+                  <span className="font-medium text-ink truncate min-w-0">{p.name}</span>
                   {p.id === hostId && (
-                    <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full ml-auto">Hôte</span>
+                    <span className="shrink-0 text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full ml-auto">Hôte</span>
                   )}
                   {p.id === session.playerId && p.id !== hostId && (
-                    <span className="text-xs bg-edge text-muted px-2 py-0.5 rounded-full ml-auto">Vous</span>
+                    <span className="shrink-0 text-xs bg-edge text-muted px-2 py-0.5 rounded-full ml-auto">Vous</span>
                   )}
                 </li>
               ))}
               {players.length === 0 && <li className="text-muted text-sm">En attente de connexion...</li>}
             </ul>
+            )}
           </div>
 
           {/* Paramètres et lancement */}
           <div className="flex flex-col gap-4 min-w-0">
-          <div className="bg-surface rounded-2xl p-5 border border-edge">
+          <div className="bg-surface rounded-2xl p-4 sm:p-5 border border-edge">
             <div className="flex items-center gap-2 mb-4">
               <h3 className="font-semibold text-ink">Paramètres</h3>
               {!isHost && <span className="text-xs text-muted ml-auto">Configuré par l'hôte</span>}
@@ -599,13 +671,13 @@ export default function Lobby() {
 
               {/* Anime mode has no early hint: it would give the airing year away */}
               {!isAnime && (
-                <label className="flex items-center gap-3 cursor-pointer group">
+                <label className="flex items-center gap-3 min-h-11 lg:min-h-0 cursor-pointer group">
                   <input
                     type="checkbox"
                     checked={settings.showArtistHint}
                     disabled={!isHost}
                     onChange={(e) => updateSetting("showArtistHint", e.target.checked)}
-                    className="w-4 h-4 accent-accent disabled:opacity-60"
+                    className="w-5 h-5 lg:w-4 lg:h-4 shrink-0 accent-accent disabled:opacity-60"
                   />
                   <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
                     Indice sur l'artiste en cours de manche
@@ -613,29 +685,43 @@ export default function Lobby() {
                 </label>
               )}
 
-              <label className="flex items-center gap-3 cursor-pointer group">
+              <label className="flex items-center gap-3 min-h-11 lg:min-h-0 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={settings.showHint}
                   disabled={!isHost}
                   onChange={(e) => updateSetting("showHint", e.target.checked)}
-                  className="w-4 h-4 accent-accent disabled:opacity-60"
+                  className="w-5 h-5 lg:w-4 lg:h-4 shrink-0 accent-accent disabled:opacity-60"
                 />
                 <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
                   {isAnime ? "Indice sur le nom de l'animé en fin de manche" : "Indice sur le titre en fin de manche"}
                 </span>
               </label>
 
-              <label className="flex items-center gap-3 cursor-pointer group">
+              <label className="flex items-center gap-3 min-h-11 lg:min-h-0 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={settings.showLyrics}
                   disabled={!isHost}
                   onChange={(e) => updateSetting("showLyrics", e.target.checked)}
-                  className="w-4 h-4 accent-accent disabled:opacity-60"
+                  className="w-5 h-5 lg:w-4 lg:h-4 shrink-0 accent-accent disabled:opacity-60"
                 />
                 <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
                   Afficher les paroles au résultat
+                </span>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={teamMode}
+                  disabled={!isHost}
+                  onChange={(e) => updateSetting("teamMode", e.target.checked)}
+                  className="w-4 h-4 accent-accent disabled:opacity-60"
+                />
+                <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink flex items-center gap-1.5">
+                  <UsersThree size={14} weight="bold" />
+                  Mode équipe (Bleu contre Rouge)
                 </span>
               </label>
 
@@ -654,18 +740,18 @@ export default function Lobby() {
                     onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                     placeholder="Mot de passe (vide = salon ouvert)"
                     maxLength={LOBBY_PASSWORD_MAX_LENGTH}
-                    className="w-full border border-edge bg-surface rounded-xl px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                    className="w-full border border-edge bg-surface rounded-xl px-3 py-2.5 sm:py-2 text-base sm:text-sm text-ink focus:outline-none focus:border-accent"
                   />
                 ) : (
                   <p className="text-sm text-ink">{access.hasPassword ? "Protégé par mot de passe" : "Salon ouvert"}</p>
                 )}
-                <label className="flex items-center gap-3 cursor-pointer group">
+                <label className="flex items-center gap-3 min-h-11 lg:min-h-0 cursor-pointer group">
                   <input
                     type="checkbox"
                     checked={access.allowLateJoin}
                     disabled={!isHost}
                     onChange={(e) => commitAccess(passwordDraft, e.target.checked)}
-                    className="w-4 h-4 accent-accent disabled:opacity-60"
+                    className="w-5 h-5 lg:w-4 lg:h-4 shrink-0 accent-accent disabled:opacity-60"
                   />
                   <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink">
                     Autoriser à rejoindre pendant la partie
@@ -675,6 +761,12 @@ export default function Lobby() {
             </div>
           </div>
     {error && <p className="text-center text-red-500 text-sm">{error}</p>}
+    {emptyTeam && (
+      <p className="flex items-center justify-center gap-1.5 text-center text-amber-600 text-xs font-medium">
+        <Warning size={14} weight="bold" />
+        Une équipe est vide : la partie peut quand même démarrer.
+      </p>
+    )}
 
     {isHost ? (
       <button
@@ -714,6 +806,32 @@ export default function Lobby() {
   )
 }
 
+function PlayerRow({
+  player,
+  isHost,
+  isMe,
+  onEdit,
+}: {
+  player: PlayerPublic
+  isHost: boolean
+  isMe: boolean
+  onEdit: () => void
+}) {
+  return (
+    <li className={`flex items-center gap-3 ${player.connected ? "" : "opacity-60"}`}>
+      <Avatar
+        name={player.avatarSeed || player.name}
+        size={48}
+        status={player.connected ? PlayerStatus.Online : PlayerStatus.Offline}
+        onEdit={isMe ? onEdit : undefined}
+      />
+      <span className="font-medium text-ink">{player.name}</span>
+      {isHost && <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full ml-auto">Hôte</span>}
+      {isMe && !isHost && <span className="text-xs bg-edge text-muted px-2 py-0.5 rounded-full ml-auto">Vous</span>}
+    </li>
+  )
+}
+
 function Setting({
   label,
   value,
@@ -747,7 +865,7 @@ function Setting({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-accent disabled:opacity-60"
+        className="w-full h-6 accent-accent disabled:opacity-60"
       />
     </div>
   )

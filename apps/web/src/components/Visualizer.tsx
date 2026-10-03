@@ -202,7 +202,7 @@ export default function Visualizer({ previewUrl, isPlaying, seekTo = 0 }: Props)
         <button
           onClick={() => setMuted(!muted)}
           aria-label={muted ? "Rétablir le son" : "Couper le son"}
-          className="text-white/60 hover:text-toffee transition-colors"
+          className="p-2 -m-2 text-white/60 hover:text-toffee transition-colors"
         >
           {muted || volume === 0 ? <SpeakerSlash size={15} /> : <SpeakerHigh size={15} />}
         </button>
