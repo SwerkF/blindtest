@@ -9,6 +9,7 @@
     "generate": "bunx prisma generate",
     "catalog:build": "bun scripts/catalog/build.ts",
     "catalog:import": "bun scripts/catalog/import.ts",
+    "catalog:import-all": "bun scripts/catalog/import-all.ts",
     "catalog:dev": "bun scripts/catalog/dev-fixture.ts"
   },
   "dependencies": {
