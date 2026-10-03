@@ -3,6 +3,7 @@ import { prisma } from "@/db"
 import type { GameEndSummary } from "@/game/engine"
 import { evaluateAchievements, isWin } from "@/account/achievements"
 import { notifyUser } from "@/account/presence"
+import { swerkFriendsAmong, swerkUserId } from "@/account/swerk"
 
 /**
  * Stores the game in the history of every logged-in participant and unlocks
@@ -19,6 +20,9 @@ export async function persistGameResults(summary: GameEndSummary) {
     select: { requesterId: true, addresseeId: true },
   })
   const hasFriendInGame = new Set(friendships.flatMap((f) => [f.requesterId, f.addresseeId]))
+  const swerkId = await swerkUserId()
+  const swerkInGame = swerkId !== null && userIds.includes(swerkId)
+  const swerkFriends = await swerkFriendsAmong(userIds, swerkId)
 
   // The same account in two tabs only counts once, with its best result
   const seen = new Set<string>()
@@ -59,6 +63,8 @@ export async function persistGameResults(summary: GameEndSummary) {
         gamesPlayed,
         wins,
         playedWithFriend: hasFriendInGame.has(player.userId),
+        friendOfSwerk: swerkFriends.has(player.userId),
+        playedWithSwerk: swerkInGame && player.userId !== swerkId,
       },
       unlocked.map((u) => u.achievementId)
     )

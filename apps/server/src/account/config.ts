@@ -23,6 +23,9 @@ export const authConfig = {
   secureCookies: webOrigin?.startsWith("https://") ?? false,
 }
 
+/** Swerk is recognised by his Discord id only (never by pseudo), for the secret achievements. */
+export const SWERK_DISCORD_ID = optional("SWERK_DISCORD_ID") ?? "317411645129490435"
+
 export function discordEnabled(): boolean {
   return Boolean(authConfig.discordClientId && authConfig.discordClientSecret && authConfig.discordRedirectUri)
 }

@@ -11,13 +11,18 @@ export enum AchievementId {
   Unstoppable = "wins_10",
   Lightning = "title_under_3s",
   PerfectRound = "perfect_round",
+  /** Kept from the old 5-track "Sans-faute" so rows unlocked back then still map. */
   Flawless = "flawless_game",
+  FlawlessPerfect = "flawless_perfect",
+  FlawlessUltimate = "flawless_ultimate",
   Historian = "years_5",
   Century = "score_100",
   Otaku = "anime_win",
   Marathon = "marathon",
   WithFriends = "with_friends",
   TeamPlayer = "team_win",
+  SwerkFriend = "swerk_friend",
+  SwerkGame = "swerk_game",
 }
 
 export interface AchievementDef {
@@ -25,6 +30,8 @@ export interface AchievementDef {
   name: string
   description: string
   icon: string
+  /** Hidden in the list (« ??? ») until unlocked. */
+  secret?: boolean
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
@@ -43,9 +50,21 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   },
   {
     id: AchievementId.Flawless,
-    name: "Sans-faute",
-    description: "Trouve la réponse à chaque manche d'une partie d'au moins 5 titres",
+    name: "Sans faute",
+    description: "Trouve le titre à chaque manche d'une partie d'au moins 10 titres",
     icon: "💎",
+  },
+  {
+    id: AchievementId.FlawlessPerfect,
+    name: "Sans faute Perfect",
+    description: "Trouve le titre et l'artiste à chaque manche d'une partie d'au moins 10 titres",
+    icon: "🌟",
+  },
+  {
+    id: AchievementId.FlawlessUltimate,
+    name: "Sans faute Ultimate",
+    description: "Trouve le titre, l'artiste et l'année à chaque manche d'une partie d'au moins 10 titres",
+    icon: "👑",
   },
   { id: AchievementId.Historian, name: "Historien", description: "Trouve 5 années dans une même partie", icon: "📅" },
   { id: AchievementId.Century, name: "Centurion", description: "Marque 100 points dans une partie", icon: "💯" },
@@ -53,6 +72,20 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: AchievementId.Marathon, name: "Marathonien", description: "Termine une partie d'au moins 30 titres", icon: "🏃" },
   { id: AchievementId.WithFriends, name: "Entre amis", description: "Joue une partie avec un ami", icon: "🤝" },
   { id: AchievementId.TeamPlayer, name: "Esprit d'équipe", description: "Gagne une partie en équipe", icon: "🛡️" },
+  {
+    id: AchievementId.SwerkFriend,
+    name: "Ami de Swerk",
+    description: "Compte Swerk parmi tes amis",
+    icon: "🫶",
+    secret: true,
+  },
+  {
+    id: AchievementId.SwerkGame,
+    name: "Partie avec Swerk",
+    description: "Termine une partie dans le même salon que Swerk",
+    icon: "🎤",
+    secret: true,
+  },
 ]
 
 export function achievementDef(id: string): AchievementDef | undefined {
