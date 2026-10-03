@@ -120,10 +120,38 @@ export interface GameHistoryItem {
   playedAt: string
 }
 
+/**
+ * Profile stats over every saved game. Round stats only cover games saved with
+ * round detail (`roundsTracked`); older games count for games/wins/best score only.
+ */
+export interface ProfileStats {
+  gamesPlayed: number
+  wins: number
+  /** Share of games won, 0–100, rounded. */
+  winRate: number
+  bestScore: number | null
+  /** Rounds that carry detail; round stats are null when it is 0. */
+  roundsTracked: number
+  /**
+   * "Guess moyen": average number of answers found per round, out of 3
+   * (artist, title, year), e.g. 1.4.
+   */
+  averageFound: number | null
+  /** Share of rounds where the title (or the anime) was found, 0–100. */
+  titleRate: number | null
+  /** "Guess perfect": rounds with the artist and the title found. */
+  perfectRounds: number
+  /** "Guess ultimate": rounds with the artist, the title and the year found. */
+  ultimateRounds: number
+  /** Average time to find the title, in milliseconds. */
+  averageTitleMs: number | null
+}
+
 export interface HistoryResponse {
   items: GameHistoryItem[]
   gamesPlayed: number
   wins: number
+  stats: ProfileStats
 }
 
 export enum FriendRequestOutcome {

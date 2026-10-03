@@ -20,6 +20,7 @@ import { AccountQueryKey, accountApi, discordLoginUrl } from "@/utils/accountApi
 import Avatar from "@/components/Avatar"
 import SettingsMenu from "@/components/SettingsMenu"
 import FriendsPanel from "@/components/FriendsPanel"
+import ProfileStatsBlock from "@/components/ProfileStats"
 import LegalFooter from "@/components/LegalFooter"
 import Modal from "@/components/Modal"
 import { ProfileTab, readProfileTab } from "@/utils/profileDrawer"
@@ -224,27 +225,13 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
   )
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="bg-canvas/60 border border-edge rounded-xl px-3 py-2 text-center">
-      <p className="text-xl font-black text-ink">{value}</p>
-      <p className="text-xs text-muted">{label}</p>
-    </div>
-  )
-}
-
 function HistoryTab() {
   const { data, isLoading, isError } = useQuery({ queryKey: [AccountQueryKey.History], queryFn: accountApi.history })
   if (isLoading) return <p className="text-sm text-muted">Chargement…</p>
   if (isError || !data) return <p className="text-sm text-red-500">Impossible de charger l'historique</p>
-  const ratio = data.gamesPlayed ? Math.round((data.wins / data.gamesPlayed) * 100) : 0
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-2">
-        <Stat label="Parties" value={data.gamesPlayed} />
-        <Stat label="Victoires" value={data.wins} />
-        <Stat label="Taux" value={`${ratio} %`} />
-      </div>
+      <ProfileStatsBlock stats={data.stats} />
       {data.items.length === 0 ? (
         <p className="text-sm text-muted">Aucune partie enregistrée pour l'instant : lance-toi !</p>
       ) : (
@@ -258,7 +245,7 @@ function HistoryTab() {
   )
 }
 
-function HistoryRow({ item }: { item: GameHistoryItem }) {
+export function HistoryRow({ item }: { item: GameHistoryItem }) {
   return (
     <li className="flex items-center gap-3 bg-canvas/60 border border-edge rounded-xl px-3 py-2.5">
       <span

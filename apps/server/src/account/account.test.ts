@@ -251,6 +251,8 @@ test("fin de partie : résumé avec comptes, rangs ex aequo et trouvaille la plu
   expect(alice.fastestFindMs).not.toBeNull()
   expect(alice.fastestFindMs!).toBeLessThan(3000)
   expect(chloe.fastestFindMs).toBeNull()
+  expect(alice.titleFindMs).toHaveLength(1)
+  expect(chloe.titleFindMs).toEqual([])
   expect(alice.team).toBeNull()
   expect(alice.teamWon).toBeNull()
 

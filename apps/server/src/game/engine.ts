@@ -53,6 +53,8 @@ interface PlayerState {
   avatarUrl: string | null
   /** Quickest title (or anime) find this game, for achievements. */
   fastestFindMs: number | null
+  /** Time to find the title (or anime) on each round it was found, for profile stats. */
+  titleFindMs: number[]
   send: (msg: WsServerMessage) => void
 }
 
@@ -120,6 +122,7 @@ function newPlayer(
     userId: null,
     avatarUrl: null,
     fastestFindMs: null,
+    titleFindMs: [],
     send,
   }
 }
@@ -472,6 +475,7 @@ export async function startGame(
     p.score = 0
     p.outcomes = []
     p.fastestFindMs = null
+    p.titleFindMs = []
   }
   // Playing from the countdown onwards, so clients landing on the game page
   // during it are not bounced back to the lobby
@@ -732,6 +736,7 @@ export function restartToLobby(code: string) {
     p.score = 0
     p.outcomes = []
     p.fastestFindMs = null
+    p.titleFindMs = []
     p.hasFoundArtist = false
     p.hasFoundTitle = false
     p.hasFoundBoth = false
@@ -985,6 +990,7 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
 function recordFind(room: Room, player: PlayerState) {
   const elapsed = Date.now() - room.roundStartedAt
   if (player.fastestFindMs === null || elapsed < player.fastestFindMs) player.fastestFindMs = elapsed
+  player.titleFindMs.push(elapsed)
 }
 
 /** Ties the player to a logged-in account so the game lands in their history. */
@@ -1025,6 +1031,7 @@ export interface GameEndPlayer {
   rank: number
   outcomes: RoundOutcome[]
   fastestFindMs: number | null
+  titleFindMs: number[]
   team: string | null
   teamWon: boolean | null
 }
@@ -1054,6 +1061,7 @@ export function gameSummary(room: Room): GameEndSummary {
         rank: 1 + players.filter((other) => other.score > p.score).length,
         outcomes: [...p.outcomes],
         fastestFindMs: p.fastestFindMs,
+        titleFindMs: [...p.titleFindMs],
         team,
         // A draw counts as neither a win nor a loss
         teamWon: team && winner ? team === winner : null,

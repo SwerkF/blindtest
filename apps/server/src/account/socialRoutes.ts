@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply } from "fastify"
-import type { Friendship, User } from "@prisma/client"
+import type { Friendship, GameResult, User } from "@prisma/client"
 import {
   FriendRequestOutcome,
   FriendshipStatus,
   GameMode,
   type AchievementId,
   type FriendsResponse,
+  type GameHistoryItem,
   type HistoryResponse,
   type UnlockedAchievement,
 } from "@blindmusic/shared"
@@ -22,6 +23,7 @@ import {
 } from "@/account/friendship"
 import { isOnline, notifyUser } from "@/account/presence"
 import { toPublicUser } from "@/account/users"
+import { loadProfileStats } from "@/account/stats"
 import { isUserInRoom, rooms } from "@/game/engine"
 
 const HISTORY_LIMIT = 50
@@ -35,7 +37,23 @@ function toRow(friendship: Friendship): FriendshipRow {
   }
 }
 
-function findPair(a: string, b: string) {
+export function toHistoryItem(r: GameResult): GameHistoryItem {
+  return {
+    id: r.id,
+    roomCode: r.roomCode,
+    mode: r.mode === GameMode.Anime ? GameMode.Anime : GameMode.Classic,
+    score: r.score,
+    rank: r.rank,
+    playerCount: r.playerCount,
+    roundCount: r.roundCount,
+    won: r.won,
+    team: r.team,
+    teamWon: r.teamWon,
+    playedAt: r.playedAt.toISOString(),
+  }
+}
+
+export function findPair(a: string, b: string) {
   return prisma.friendship.findFirst({
     where: {
       OR: [
@@ -50,27 +68,15 @@ export default async function socialRoutes(fastify: FastifyInstance) {
   fastify.get("/me/history", async (req, reply): Promise<HistoryResponse | undefined> => {
     const user = await requireUser(req, reply)
     if (!user) return
-    const [rows, gamesPlayed, wins] = await Promise.all([
+    const [rows, stats] = await Promise.all([
       prisma.gameResult.findMany({ where: { userId: user.id }, orderBy: { playedAt: "desc" }, take: HISTORY_LIMIT }),
-      prisma.gameResult.count({ where: { userId: user.id } }),
-      prisma.gameResult.count({ where: { userId: user.id, won: true } }),
+      loadProfileStats(user.id),
     ])
     return {
-      gamesPlayed,
-      wins,
-      items: rows.map((r) => ({
-        id: r.id,
-        roomCode: r.roomCode,
-        mode: r.mode === GameMode.Anime ? GameMode.Anime : GameMode.Classic,
-        score: r.score,
-        rank: r.rank,
-        playerCount: r.playerCount,
-        roundCount: r.roundCount,
-        won: r.won,
-        team: r.team,
-        teamWon: r.teamWon,
-        playedAt: r.playedAt.toISOString(),
-      })),
+      gamesPlayed: stats.gamesPlayed,
+      wins: stats.wins,
+      stats,
+      items: rows.map(toHistoryItem),
     }
   })
 
