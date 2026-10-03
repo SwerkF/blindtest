@@ -8,6 +8,8 @@ import { AccountQueryKey } from "@/utils/accountApi"
 import { linkAccount } from "@/utils/accountSync"
 import { showToast } from "@/utils/toast"
 import Toaster from "@/components/Toaster"
+import ProfileDrawer from "@/components/ProfileDrawer"
+import { ProfileTab, openProfile } from "@/utils/profileDrawer"
 
 const INVITE_TOAST_MS = 20_000
 const AUTH_ERROR_PARAM = "authError"
@@ -60,7 +62,7 @@ export default function AccountRoot() {
           title: "Nouvelle demande d'ami",
           text: `${msg.from.pseudo} veut t'ajouter en ami`,
           imageUrl: msg.from.discordAvatarUrl,
-          action: { label: "Voir", onClick: () => navigate("/profil?onglet=amis") },
+          action: { label: "Voir", onClick: () => openProfile(ProfileTab.Friends) },
         })
         break
       case "friend:accepted":
@@ -101,6 +103,7 @@ export default function AccountRoot() {
   return (
     <>
       <Outlet />
+      <ProfileDrawer />
       <Toaster />
     </>
   )

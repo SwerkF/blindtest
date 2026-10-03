@@ -269,6 +269,19 @@ body {
   animation: pop-in 0.3s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@utility animate-slide-in {
+  animation: slide-in-right 0.25s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
 /* Leader crown: gold with a light sweep, clipped to the crown shape itself */
 @keyframes crown-bob {
   0%,

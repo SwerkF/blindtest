@@ -1,7 +1,7 @@
-import { Link } from "react-router-dom"
 import { DiscordLogo, SignOut, UserCircle } from "@phosphor-icons/react"
 import { useAuth } from "@/hooks/useAuth"
 import { discordLoginUrl } from "@/utils/accountApi"
+import { openProfile } from "@/utils/profileDrawer"
 
 /** Account block of the gear menu: profile link and logout, or the Discord login. */
 export default function AccountMenuSection({ onNavigate }: { onNavigate?: () => void }) {
@@ -34,14 +34,18 @@ export default function AccountMenuSection({ onNavigate }: { onNavigate?: () => 
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <Link
-          to="/profil"
-          onClick={onNavigate}
-          className="flex items-center gap-2 text-sm text-ink px-2 py-1.5 rounded-lg hover:bg-edge/50 transition-colors"
+        {/* A drawer rather than /profil: leaving the page would close the lobby or game socket */}
+        <button
+          type="button"
+          onClick={() => {
+            onNavigate?.()
+            openProfile()
+          }}
+          className="flex items-center gap-2 text-sm text-ink px-2 py-1.5 rounded-lg hover:bg-edge/50 transition-colors text-left"
         >
           <UserCircle size={16} />
           Mon profil
-        </Link>
+        </button>
         <button
           type="button"
           onClick={() => {
