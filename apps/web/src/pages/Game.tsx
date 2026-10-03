@@ -715,14 +715,22 @@ export default function Game() {
             const bubble = bubbles[p.id]
             // Ranks restart within each team
             const rank = teamMode ? listedPlayers.slice(0, i).filter((o) => o.team === p.team).length : i
+            const isMe = p.id === session.playerId
             return (
               <li
                 key={p.id}
-                className={`shrink-0 lg:shrink max-w-[230px] lg:max-w-none snap-start flex items-center gap-2.5 lg:gap-3 px-3 py-2.5 short:py-1.5 rounded-xl transition-all duration-200 animate-rise hover:brightness-105 ${
-                  p.id === session.playerId ? "bg-accent/10 border border-accent/20" : "bg-edge/40"
-                } ${p.connected ? "" : "opacity-60"}`}
-                style={teamMode ? { boxShadow: `inset 4px 0 0 ${TEAM_STYLE[p.team].color}` } : undefined}
+                className={`relative shrink-0 lg:shrink max-w-[230px] lg:max-w-none snap-start flex items-center gap-2.5 lg:gap-3 px-3 py-2.5 short:py-1.5 transition-all duration-200 animate-rise hover:brightness-105 ${
+                  teamMode ? "rounded-r-xl pl-4" : "rounded-xl"
+                } ${isMe ? "bg-accent/10 border border-accent/20" : "bg-edge/40"} ${p.connected ? "" : "opacity-60"}`}
               >
+                {teamMode && (
+                  // Straight team stripe over the card's left edge (and its border, if any)
+                  <span
+                    aria-hidden="true"
+                    className={`absolute w-1 ${isMe ? "-left-px -inset-y-px" : "left-0 inset-y-0"}`}
+                    style={{ backgroundColor: TEAM_STYLE[p.team].color }}
+                  />
+                )}
                 <span
                   className={`text-xs font-mono w-4 text-center ${teamMode ? `font-bold ${TEAM_STYLE[p.team].text}` : "text-muted"}`}
                   title={teamMode ? `Équipe ${TEAM_LABEL[p.team]}` : undefined}
