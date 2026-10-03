@@ -36,6 +36,8 @@ model User {
   /// Shows the Discord profile picture instead of the Blobatar.
   useDiscordAvatar Boolean @default(false)
   friendCode    String   @unique
+  /// Packs opened since the last legendary vinyl (pity timer, see booster/open.ts).
+  packsSincePity Int     @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -44,6 +46,8 @@ model User {
   achievements     UserAchievement[]
   sentRequests     Friendship[]      @relation("FriendshipRequester")
   receivedRequests Friendship[]      @relation("FriendshipAddressee")
+  packs            UserPack[]
+  cards            UserCard[]
 }
 
 /// Login session; the cookie carries its id signed with SESSION_SECRET.
@@ -111,4 +115,66 @@ model Friendship {
 
   @@unique([requesterId, addresseeId])
   @@index([addresseeId])
+}
+
+/// One playable track that vinyl packs can draw. Built by the quarterly catalogue
+/// script (scripts/catalog), never in live. Images are not stored: the cover is
+/// rebuilt from deezerMd5Image and loaded by the browser from the Deezer CDN.
+model CardPoolEntry {
+  id              String   @id @default(cuid())
+  isrc            String   @unique
+  recordingMbid   String?
+  deezerTrackId   Int      @unique
+  title           String
+  artistName      String
+  deezerMd5Image  String?
+  /// Matches a CardRarity; only used to draw. Owned vinyls keep UserCard.rarityAtObtain.
+  rarity          String
+  popularityScore Float
+  /// JSON array of the thematic pools (genre, decade) the track belongs to.
+  pools           String   @default("[]")
+  /// False once the track left the catalogue; entries are never deleted.
+  available       Boolean  @default(true)
+  /// Set when a client could not load the cover, so the next script run refreshes it.
+  needsRefresh    Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  cards UserCard[]
+
+  @@index([available, rarity])
+}
+
+/// A pack earned by a player; it stays in the table once opened (openedAt) so the
+/// daily cap can count what was earned and an opening is a conditional update.
+model UserPack {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Matches a PackRarity.
+  rarity       String
+  earnedAt     DateTime @default(now())
+  /// Null while the pack sits unopened in the inventory.
+  openedAt     DateTime?
+  /// At most one pack per game result, which makes granting idempotent.
+  gameResultId String?  @unique
+
+  @@index([userId, openedAt, rarity])
+  @@index([userId, earnedAt])
+}
+
+/// A vinyl in a player's collection; duplicates only raise the count.
+model UserCard {
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entryId         String
+  entry           CardPoolEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  /// Rarity frozen the first time the vinyl was drawn; collections only use this one.
+  rarityAtObtain  String
+  count           Int           @default(1)
+  firstObtainedAt DateTime      @default(now())
+  lastObtainedAt  DateTime      @default(now())
+
+  @@id([userId, entryId])
+  @@index([entryId])
+  @@index([userId, rarityAtObtain])
 }

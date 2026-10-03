@@ -4,14 +4,16 @@ import authRoutes from "@/account/authRoutes"
 import socialRoutes from "@/account/socialRoutes"
 import profileRoutes from "@/account/profileRoutes"
 import userWsRoute from "@/account/userWs"
+import boosterRoutes from "@/booster/routes"
 import { persistGameResults } from "@/account/results"
 
-/** Optional Discord accounts: auth, history, achievements, friends and the per-user socket. */
+/** Optional Discord accounts: auth, history, achievements, friends, vinyl boosters and the per-user socket. */
 export default async function accountModule(fastify: FastifyInstance) {
   await fastify.register(authRoutes)
   await fastify.register(socialRoutes)
   await fastify.register(profileRoutes)
   await fastify.register(userWsRoute)
+  await fastify.register(boosterRoutes)
   onGameEnd((summary) => {
     persistGameResults(summary).catch((error: unknown) => fastify.log.error(error, "Saving game results failed"))
   })

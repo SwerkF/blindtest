@@ -1,4 +1,5 @@
 import type { GameMode } from "./types"
+import type { PackRarity } from "./booster"
 
 /** Optional Discord accounts: guests keep playing with a pseudo only. */
 
@@ -248,5 +249,6 @@ export type UserWsServerMessage =
   | { type: "friend:changed" }
   | { type: "lobby:invite"; from: PublicUser; code: string }
   | { type: "achievement:unlocked"; ids: AchievementId[] }
+  | { type: "booster:earned"; rarity: PackRarity }
 
 export type UserWsClientMessage = { type: "ping" }

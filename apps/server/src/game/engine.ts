@@ -1041,6 +1041,8 @@ export interface GameEndSummary {
   code: string
   mode: GameMode
   roundCount: number
+  /** Guessing time of each round, from the lobby settings (drives the booster drop). */
+  roundDurationMs: number
   players: GameEndPlayer[]
 }
 
@@ -1052,6 +1054,7 @@ export function gameSummary(room: Room): GameEndSummary {
     code: room.code,
     mode: room.settings?.mode ?? GameMode.Classic,
     roundCount: room.tracks.length,
+    roundDurationMs: (room.settings?.roundDuration ?? 0) * 1000,
     players: players.map((p) => {
       const team = teamMode ? p.team : null
       return {
