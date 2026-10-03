@@ -1,4 +1,4 @@
-import { JsonlCache, sleep } from "./http"
+import { JsonlCache, sleep } from "@/http"
 
 const ENDPOINT = "https://api.listenbrainz.org/1/popularity/recording"
 

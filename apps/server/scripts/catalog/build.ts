@@ -18,7 +18,7 @@ import {
   type DeezerTrack,
 } from "./deezer"
 import { genreFromLabel, isExcluded, macroGenre } from "./filters"
-import { JsonlCache } from "./http"
+import { JsonlCache } from "@/http"
 import { fetchPopularity, type Popularity } from "./listenbrainz"
 import { buildEntries, type Candidate } from "./score"
 

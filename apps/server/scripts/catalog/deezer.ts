@@ -1,5 +1,5 @@
 import { decadeOf } from "./filters"
-import { JsonlCache, Throttle, sleep } from "./http"
+import { JsonlCache, Throttle, fetchRetry, sleep } from "@/http"
 import type { Candidate } from "./score"
 
 const API = "https://api.deezer.com"
@@ -23,21 +23,9 @@ export interface DeezerTrack {
 
 /** Deezer reports errors with a 200 status and an `error` object. */
 async function getJson<T>(path: string, attempt = 0): Promise<T | null> {
-  await throttle.wait()
-  let response: Response
-  try {
-    response = await fetch(`${API}${path}`)
-  } catch (error) {
-    if (attempt >= 4) throw error
-    await sleep(2000 * 2 ** attempt)
-    return getJson(path, attempt + 1)
-  }
+  const response = await fetchRetry(`${API}${path}`, { throttle, retries: 4 })
   if (response.status === 404) return null
-  if (!response.ok) {
-    if (attempt >= 4) throw new Error(`Deezer ${response.status} on ${path}`)
-    await sleep(2000 * 2 ** attempt)
-    return getJson(path, attempt + 1)
-  }
+  if (!response.ok) throw new Error(`Deezer ${response.status} on ${path}`)
   const body = (await response.json()) as T & { error?: { code?: number } }
   if (body?.error) {
     // 4 = quota exceeded: wait and retry; 800 = no data; anything else is a miss

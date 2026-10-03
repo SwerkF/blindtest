@@ -1,8 +1,8 @@
 import { CardRarity, PackRarity } from "@blindmusic/shared"
 
 /**
- * Look of every rarity. Packs and vinyls are drawn from this one table, so the
- * final pack designs only have to replace the values (and PackArt) here.
+ * Look of every rarity. Packs and vinyls are drawn from this one table; the pack sleeves
+ * themselves are the images of `PackArt`, these colours tint the labels, chips and rate tables.
  */
 export interface RarityStyle {
   label: string
