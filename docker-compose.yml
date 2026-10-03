@@ -5,8 +5,11 @@ services:
       dockerfile: apps/server/Dockerfile
     expose:
       - "3001"
-    # Optional: DATABASE_URL is set below, the file only adds local overrides
+    # Optional: DATABASE_URL is set below, the files only add local overrides.
+    # The root .env carries the Discord login settings, see .env.example.
     env_file:
+      - path: .env
+        required: false
       - path: apps/server/.env
         required: false
     environment:

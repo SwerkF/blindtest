@@ -4,14 +4,21 @@ import websocket from "@fastify/websocket"
 import playlistsRoute from "@/routes/playlists"
 import lobbiesRoute from "@/routes/lobbies"
 import wsRoute from "@/ws"
+import accountModule from "@/account"
 
 const fastify = Fastify({ logger: { level: "info" } })
 
-await fastify.register(cors, { origin: true })
+// Credentials so the session cookie also works when the web app is served from another origin
+await fastify.register(cors, {
+  origin: process.env.WEB_ORIGIN?.trim() || true,
+  credentials: true,
+  methods: ["GET", "HEAD", "POST", "PATCH", "DELETE"],
+})
 await fastify.register(websocket)
 await fastify.register(playlistsRoute)
 await fastify.register(lobbiesRoute)
 await fastify.register(wsRoute)
+await fastify.register(accountModule)
 
 fastify.listen({ port: 3001, host: "0.0.0.0" }, (err) => {
   if (err) {

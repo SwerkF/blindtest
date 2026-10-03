@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
-import { rooms, createRoom, addPlayer, joinRefusal, JoinRefusal } from "@/game/engine"
+import { rooms, createRoom, addPlayer, joinRefusal, JoinRefusal, linkUser } from "@/game/engine"
+import { userFromCookies } from "@/account/session"
 
 function genCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase()
@@ -23,6 +24,7 @@ export default async function lobbiesRoute(fastify: FastifyInstance) {
     const playerId = genId()
     // send is a no-op here; the real send is registered on WS connect
     createRoom(code, playerId, playerName.trim(), avatarSeedFrom(req.body), () => {})
+    linkUser(code, playerId, (await userFromCookies(req.headers.cookie).catch(() => null))?.id ?? null)
     return { code, playerId, playerName: playerName.trim() }
   })
 
@@ -59,6 +61,7 @@ export default async function lobbiesRoute(fastify: FastifyInstance) {
       const playerId = genId()
       const joined = addPlayer(code.toUpperCase(), playerId, playerName.trim(), avatarSeedFrom(req.body), () => {})
       if (!joined) return reply.status(409).send({ error: "Impossible de rejoindre" })
+      linkUser(code.toUpperCase(), playerId, (await userFromCookies(req.headers.cookie).catch(() => null))?.id ?? null)
       return { code: code.toUpperCase(), playerId, playerName: playerName.trim() }
     }
   )

@@ -1,7 +1,7 @@
 ## Learned User Preferences
 
 - Prefers French for product UI and agent communication.
-- No account/signup flow: players enter a pseudo only.
+- No mandatory account/signup flow: players enter a pseudo only; Discord login is optional.
 - Music integration and branding should be Deezer, not Spotify.
 - Persist username, avatar seed, and recent game history in localStorage.
 - Avatars use Blobatar (`@blobatar/react`); players pick/change avatar when joining or creating a lobby, and avatars should stay clearly visible.
@@ -20,3 +20,4 @@
 - Anime blind-test mode (`GameMode.Anime`): Deezer playlist tracks are matched to AnimeThemes.moe songs (`apps/server/src/anime.ts`, throttled to 80 req/min); accepted answers come from `apps/server/src/animeNames.ts`: AnimeThemes names/synonyms, AniList titles (searched by name and by franchise name, plus the AniList id when known), a built-in alias list (FR/EN), season-stripped cores, subtitles, word-boundary prefixes and initials acronyms. Anime points shrink with time (20 → 5), singer bonus +5, year bonus kept, no early hint, no OP/ED number guessing. The game starts on the first matched track and the rest is appended in the background. Curated playlists carry a `category` (`classic` | `anime`).
 - Game UI: per-round found badges (artist/title/year) and round points beside the total, gold crown on the clear leader, presence via Blobatar expressions (`thinking` while typing, `sleepy` when disconnected), emoji reactions broadcast to everyone (`REACTIONS` in shared, 400ms server cooldown), countdown beeps on 3-2-1, and a "Quitter" button (`leave` message removes the player at once).
 - Rooms can have a host-set password and can refuse late joiners (`lobby:access`); a missing room redirects home with a notice. Colour themes (`utils/palette.ts`, `[data-palette]` CSS) are picked from the gear menu; pages use a repeating shape pattern on `.bg-canvas`, no blur/glow effects.
+- Optional Discord accounts (`apps/server/src/account/`): OAuth2 `identify` flow at `/auth/discord`, HMAC-signed httpOnly `bt_session` cookie backed by a `Session` row; env `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `SESSION_SECRET`, `WEB_ORIGIN` (see `.env.example`). Logged-in players get server-side history (`GameResult`, written from the engine's `onGameEnd` hook), achievements (`ACHIEVEMENTS` in `packages/shared/src/account.ts`), friends (friend code or search) and a per-user socket `/ws/user` for presence, friend requests, lobby invites and achievement toasts. The web app mounts `AccountRoot` (toasts + user socket) around every route; `/profil` has Historique / Succès / Amis tabs.
