@@ -4,6 +4,7 @@ import Lobby from "@/pages/Lobby"
 import Game from "@/pages/Game"
 import Suggest from "@/pages/Suggest"
 import Profile from "@/pages/Profile"
+import UserProfile from "@/pages/UserProfile"
 import Legal, { LegalDoc } from "@/pages/Legal"
 import AccountRoot from "@/components/AccountRoot"
 
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
       { path: "/game/:code", element: <Game /> },
       { path: "/suggest", element: <Suggest /> },
       { path: "/profil", element: <Profile /> },
+      { path: "/u/:id", element: <UserProfile /> },
       { path: `/${LegalDoc.Notice}`, element: <Legal doc={LegalDoc.Notice} /> },
       { path: `/${LegalDoc.Terms}`, element: <Legal doc={LegalDoc.Terms} /> },
       { path: `/${LegalDoc.Privacy}`, element: <Legal doc={LegalDoc.Privacy} /> },

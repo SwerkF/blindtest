@@ -154,6 +154,48 @@ export interface HistoryResponse {
   stats: ProfileStats
 }
 
+/** How the viewer of a public profile relates to its owner. */
+export enum FriendshipState {
+  /** The viewer is a guest: no friend button. */
+  Guest = "guest",
+  Self = "self",
+  None = "none",
+  /** The viewer sent a request that is still pending. */
+  Outgoing = "outgoing",
+  /** The profile owner asked the viewer. */
+  Incoming = "incoming",
+  Friends = "friends",
+}
+
+/** What anyone can see of an account. Never carries the Discord id, friend code or sessions. */
+export interface PublicProfileUser {
+  id: string
+  pseudo: string
+  /** Discord display name. */
+  username: string
+  avatarSeed: string | null
+  /** Discord picture, only when the owner chose it over the Blobatar. */
+  avatarUrl: string | null
+  createdAt: string
+}
+
+/** GET /users/:id — public profile (/u/:id page, profile drawer in rooms). */
+export interface PublicProfileResponse {
+  user: PublicProfileUser
+  stats: ProfileStats
+  /** Unlocked achievements only: locked (and secret) ones are never listed. */
+  achievements: UnlockedAchievement[]
+  recentGames: GameHistoryItem[]
+  friendship: FriendshipState
+  /** Pending or accepted row between the viewer and the owner, to accept/cancel/remove it. */
+  friendshipId: string | null
+}
+
+/** Whether an achievement stays hidden until unlocked (when the definition says so). */
+export function isSecretAchievement(def: AchievementDef): boolean {
+  return (def as AchievementDef & { secret?: boolean }).secret === true
+}
+
 export enum FriendRequestOutcome {
   Sent = "sent",
   /** The other person had already asked: you are now friends. */

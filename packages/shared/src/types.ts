@@ -175,6 +175,8 @@ export interface PlayerPublic {
   team: Team
   /** Logged in with a Discord account. */
   discord: boolean
+  /** App account id (User.id, not the Discord id) to open the public profile, null for guests. */
+  userId: string | null
   /** Discord profile picture, when the player chose it over the Blobatar. */
   avatarUrl: string | null
 }

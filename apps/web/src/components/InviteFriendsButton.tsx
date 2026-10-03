@@ -67,7 +67,7 @@ function InviteFriendsModal({ code, onClose }: { code: string; onClose: () => vo
             const done = sent.has(friend.user.id)
             return (
               <li key={friend.friendshipId}>
-                <UserChip user={friend.user} online={friend.online}>
+                <UserChip user={friend.user} online={friend.online} linkProfile={false}>
                   <button
                     type="button"
                     disabled={!friend.online || done}

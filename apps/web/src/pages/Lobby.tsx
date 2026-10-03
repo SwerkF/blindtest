@@ -38,6 +38,7 @@ import { useProfile } from "@/hooks/useProfile"
 import { api, clearSession, inviteUrl, loadSession, type PlaylistItem } from "@/utils/api"
 import Avatar, { PlayerStatus } from "@/components/Avatar"
 import { DiscordBadge } from "@/components/DiscordIcon"
+import ProfileName from "@/components/ProfileName"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import LegalFooter from "@/components/LegalFooter"
@@ -607,7 +608,7 @@ export default function Lobby() {
                     imageUrl={p.avatarUrl}
                     onEdit={p.id === session.playerId ? () => setEditingAvatar(true) : undefined}
                   />
-                  <span className="font-medium text-ink truncate min-w-0">{p.name}</span>
+                  <ProfileName userId={p.userId} className="font-medium text-ink truncate min-w-0">{p.name}</ProfileName>
                   {p.discord && <DiscordBadge />}
                   {p.id === hostId && (
                     <span className="shrink-0 text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full ml-auto">Hôte</span>
@@ -829,7 +830,9 @@ function PlayerRow({
         imageUrl={player.avatarUrl}
         onEdit={isMe ? onEdit : undefined}
       />
-      <span className="font-medium text-ink min-w-0 truncate">{player.name}</span>
+      <ProfileName userId={player.userId} className="font-medium text-ink min-w-0 truncate">
+        {player.name}
+      </ProfileName>
       {player.discord && <DiscordBadge />}
       {isHost && <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full ml-auto">Hôte</span>}
       {isMe && !isHost && <span className="text-xs bg-edge text-muted px-2 py-0.5 rounded-full ml-auto">Vous</span>}

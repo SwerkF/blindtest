@@ -8,6 +8,7 @@ import {
   Copy,
   Crown,
   DiscordLogo,
+  LinkSimple,
   SignOut,
   Trophy,
   Users,
@@ -74,6 +75,7 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
   const { user, discordEnabled, loading, logout, deleteAccount } = useAuth()
   const { profile } = useProfile()
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState("")
 
@@ -85,6 +87,15 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Erreur")
     }
+  }
+
+  /** Public profile link, shared with a per-player preview card (see nginx.conf). */
+  async function copyProfileLink(userId: string) {
+    try {
+      await navigator.clipboard.writeText(`${location.origin}/u/${userId}`)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 1500)
+    } catch {}
   }
 
   async function copyCode(code: string) {
@@ -141,6 +152,19 @@ export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileConte
               >
                 Code ami <span className="font-mono font-bold text-ink tracking-widest">{user.friendCode}</span>
                 {copied ? <Check size={12} weight="bold" className="text-green-600" /> : <Copy size={12} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyProfileLink(user.id)}
+                title="Copier le lien de mon profil public"
+                className="mt-3 ml-2 inline-flex items-center gap-2 text-xs text-muted bg-canvas border border-edge rounded-lg px-2.5 py-1.5 hover:border-accent transition-colors"
+              >
+                {linkCopied ? (
+                  <Check size={12} weight="bold" className="text-green-600" />
+                ) : (
+                  <LinkSimple size={12} weight="bold" />
+                )}
+                {linkCopied ? "Lien copié" : "Partager mon profil"}
               </button>
             </div>
             <button

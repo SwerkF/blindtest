@@ -181,6 +181,7 @@ function toPublic(room: Room): PlayerPublic[] {
     connected: p.connected,
     team: p.team,
     discord: p.userId !== null,
+    userId: p.userId,
     avatarUrl: p.avatarUrl,
   }))
 }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify"
 import { onGameEnd } from "@/game/engine"
 import authRoutes from "@/account/authRoutes"
 import socialRoutes from "@/account/socialRoutes"
+import profileRoutes from "@/account/profileRoutes"
 import userWsRoute from "@/account/userWs"
 import { persistGameResults } from "@/account/results"
 
@@ -9,6 +10,7 @@ import { persistGameResults } from "@/account/results"
 export default async function accountModule(fastify: FastifyInstance) {
   await fastify.register(authRoutes)
   await fastify.register(socialRoutes)
+  await fastify.register(profileRoutes)
   await fastify.register(userWsRoute)
   onGameEnd((summary) => {
     persistGameResults(summary).catch((error: unknown) => fastify.log.error(error, "Saving game results failed"))
