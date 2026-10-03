@@ -92,7 +92,10 @@ export interface AnimeTheme {
 
 /** What the reveal shows about the anime behind a track. */
 export interface AnimeReveal {
+  /** Best-known name: "Solo Leveling" rather than "Ore dake Level Up na Ken". */
   name: string
+  /** The AnimeThemes (usually romaji) name, when it differs from `name`. */
+  originalName?: string
   themes: AnimeTheme[]
   year: number | null
   season: string | null
@@ -249,6 +252,8 @@ export type WsServerMessage =
   | { type: "chat:message"; playerId: string; playerName: string; text: string; at: number }
   | { type: "reaction"; playerId: string; emoji: Reaction; at: number }
   | { type: "player:typing"; playerId: string; typing: boolean }
+  /** Only to the sender: a chat message or reaction was dropped by the anti-spam. */
+  | { type: "spam:notice"; kind: SpamKind; reason: SpamReason; retryInMs: number }
   | {
       type: "game:end"
       scores: Record<string, number>
@@ -286,6 +291,19 @@ export type Reaction = (typeof REACTIONS)[number]
 
 export function isReaction(value: unknown): value is Reaction {
   return typeof value === "string" && (REACTIONS as readonly string[]).includes(value)
+}
+
+/** What the anti-spam limits, each with its own budget. */
+export enum SpamKind {
+  Chat = "chat",
+  Reaction = "reaction",
+}
+
+export enum SpamReason {
+  /** Too many in a short time: muted for a few seconds. */
+  Rate = "rate",
+  /** The same chat message again. */
+  Duplicate = "duplicate",
 }
 
 /** Accepts a Deezer playlist URL or a numeric id. Spotify links are rejected. */

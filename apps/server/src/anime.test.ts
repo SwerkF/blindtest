@@ -6,8 +6,15 @@ import {
   type LobbySettings,
   type WsServerMessage,
 } from "@blindmusic/shared"
-import { buildMatch, pickSong, streamAnimeTracks, type AtSong } from "@/anime"
-import { acronymOf, animeNameVariants, coreTitle, expandAnswers, matchesAnswer } from "@/animeNames"
+import { buildMatch, pickSong, streamAnimeTracks, type AniListNames, type AtSong } from "@/anime"
+import {
+  acronymOf,
+  animeNameVariants,
+  bestKnownName,
+  coreTitle,
+  expandAnswers,
+  matchesAnswer,
+} from "@/animeNames"
 import type { Track } from "@/deezer"
 import {
   createRoom,
@@ -90,7 +97,8 @@ test("buildMatch reunit noms, synonymes, theme et pochette", () => {
   const match = buildMatch(GURENGE, details)!
   expect(match.names).toContain("Demon Slayer")
   expect(match.reveal).toEqual({
-    name: "Kimetsu no Yaiba",
+    name: "Demon Slayer",
+    originalName: "Kimetsu no Yaiba",
     themes: [{ type: ThemeType.Opening, sequence: 1, slug: "OP1" }],
     year: 2019,
     season: "Spring",
@@ -108,7 +116,16 @@ test("buildMatch ajoute les titres AniList (anglais, francais) via la ressource 
   const details = new Map([
     [10, { ...GURENGE.animethemes![0].anime!, resources: [{ site: "AniList", external_id: 101922 }] }],
   ])
-  const aniList = new Map([[10, ["Demon Slayer: Kimetsu no Yaiba", "Les Rôdeurs de la nuit"]]])
+  const aniList = new Map<number, AniListNames>([
+    [
+      10,
+      {
+        titles: ["Demon Slayer: Kimetsu no Yaiba", "Les Rôdeurs de la nuit"],
+        english: "Demon Slayer: Kimetsu no Yaiba",
+        romaji: "Kimetsu no Yaiba",
+      },
+    ],
+  ])
   const match = buildMatch(GURENGE, details, aniList, "LiSA")!
   expect(match.names).toContain("Demon Slayer")
   expect(match.names).toContain("Les Rôdeurs de la nuit")
@@ -196,7 +213,7 @@ test("mode anime : le titre ne rapporte rien, l'anime (nom, synonyme, abreviatio
   expect(found?.matched).toBe(GuessMatch.Anime)
   // Trouve des la premiere seconde : quasi le maximum
   expect(found?.pointsEarned).toBeGreaterThanOrEqual(19)
-  expect(found?.revealedAnime).toBe("Kimetsu no Yaiba")
+  expect(found?.revealedAnime).toBe("Demon Slayer")
 
   expect(processGuess("A1", "b", "demon slayer")?.matched).toBe(GuessMatch.Anime)
   expect(processGuess("A1", "c", "KNY")?.matched).toBe(GuessMatch.Anime)
@@ -229,7 +246,7 @@ test("mode anime : la manche finit quand tout le monde a l'anime, l'auteur et l'
 
   expect(processGuess("A3", "a", "2019")?.matched).toBe(GuessMatch.Year)
   const reveal = r.inbox.find((m) => m.type === "round:reveal")
-  expect(reveal?.type === "round:reveal" && reveal.anime?.name).toBe("Kimetsu no Yaiba")
+  expect(reveal?.type === "round:reveal" && reveal.anime?.name).toBe("Demon Slayer")
 
   r.cleanup()
 })
@@ -319,4 +336,90 @@ test("sans AniList, les classiques gardent leurs noms anglais, francais et abrev
   for (const guess of ["aot", "attack on titan", "attaque des titans", "snk"]) {
     expect({ guess, ok: matchesAnswer(guess, answers, 20) }).toEqual({ guess, ok: true })
   }
+})
+
+describe("nom affiche : le plus connu", () => {
+  const SOLO: AtSong = {
+    id: 3,
+    title: "LEveL",
+    artists: [{ name: "SawanoHiroyuki[nZk]:TOMORROW X TOGETHER" }],
+    animethemes: [
+      {
+        type: "OP",
+        sequence: 1,
+        slug: "OP1",
+        anime: { id: 30, name: "Ore dake Level Up na Ken", year: 2024, season: "Winter" },
+      },
+    ],
+  }
+
+  test("le titre anglais AniList passe avant le romaji, l'alias integre avant tout", () => {
+    expect(bestKnownName("Some Romaji", { english: "Some English", romaji: "Some Romaji" })).toBe("Some English")
+    expect(bestKnownName("Some Romaji", { english: null, romaji: "Romaji AniList" })).toBe("Romaji AniList")
+    expect(bestKnownName("Some Romaji", null)).toBe("Some Romaji")
+    expect(bestKnownName("Saint Seiya", { english: "Knights of the Zodiac", romaji: "Saint Seiya" })).toBe(
+      "Les Chevaliers du Zodiaque"
+    )
+    // Les abreviations de la liste integree ne servent pas de nom affiche
+    expect(bestKnownName("Sword Art Online", null)).toBe("Sword Art Online")
+    expect(bestKnownName("Ore dake Level Up na Ken", null)).toBe("Solo Leveling")
+  })
+
+  test("buildMatch affiche le nom AniList et garde le nom d'origine", () => {
+    const aniList = new Map<number, AniListNames>([
+      [30, { titles: ["Solo Leveling", "Ore dake Level Up na Ken"], english: "Solo Leveling", romaji: "Ore dake Level Up na Ken" }],
+    ])
+    const match = buildMatch(SOLO, new Map(), aniList)!
+    expect(match.reveal.name).toBe("Solo Leveling")
+    expect(match.reveal.originalName).toBe("Ore dake Level Up na Ken")
+    expect(match.names).toContain("Solo Leveling")
+  })
+
+  test("sans difference, pas de nom d'origine", () => {
+    const match = buildMatch(HERO, new Map())!
+    expect(match.reveal.name).toBe("Other")
+    expect(match.reveal.originalName).toBeUndefined()
+  })
+
+  function mockSolo(aniList: unknown) {
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = new URL(String(input))
+      if (url.hostname === "graphql.anilist.co") return Response.json(aniList)
+      if (url.pathname === "/search") return Response.json({ search: { songs: url.searchParams.get("q") === "LEveL" ? [SOLO] : [] } })
+      return Response.json({ anime: [SOLO.animethemes![0].anime] })
+    }) as unknown as typeof fetch
+  }
+
+  async function streamOne(id: number): Promise<Track> {
+    const batches: Track[][] = []
+    await streamAnimeTracks([track(id, "LEveL", "SawanoHiroyuki[nZk]")], 1, (tracks) => {
+      batches.push(tracks)
+      return true
+    })
+    return batches[0][0]
+  }
+
+  test("streamAnimeTracks : la recherche AniList qui correspond donne le nom", async () => {
+    mockSolo({
+      data: {
+        s0: {
+          media: [{ id: 151807, seasonYear: 2024, title: { english: "Solo Leveling", romaji: "Ore dake Level Up na Ken" }, synonyms: [] }],
+        },
+      },
+    })
+    expect((await streamOne(301)).anime?.reveal.name).toBe("Solo Leveling")
+  })
+
+  test("streamAnimeTracks : un resultat AniList sans rapport ne renomme pas l'anime", async () => {
+    const original = SOLO.animethemes![0].anime!.name
+    SOLO.animethemes![0].anime!.name = "Kusuriya no Hitorigoto"
+    mockSolo({
+      data: { s0: { media: [{ id: 1, seasonYear: 2024, title: { english: "Unrelated Show", romaji: "Betsu no Anime" }, synonyms: [] }] } },
+    })
+    try {
+      expect((await streamOne(302)).anime?.reveal.name).toBe("Kusuriya no Hitorigoto")
+    } finally {
+      SOLO.animethemes![0].anime!.name = original
+    }
+  })
 })

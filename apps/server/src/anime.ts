@@ -1,7 +1,7 @@
 import { ThemeType, type AnimeTheme } from "@blindmusic/shared"
 import type { AnimeMatch, Track } from "@/deezer"
 import { normalize, similarity } from "@/game/text"
-import { coreTitle, expandAnswers } from "@/animeNames"
+import { bestKnownName, coreTitle, expandAnswers } from "@/animeNames"
 
 /**
  * AnimeThemes.moe indexes every anime OP/ED with its song and artists.
@@ -125,6 +125,16 @@ interface AniListMedia {
   synonyms?: (string | null)[]
 }
 
+/** What AniList knows about one anime: every title for answers, English/romaji for display. */
+export interface AniListNames {
+  titles: string[]
+  english: string | null
+  romaji: string | null
+}
+
+/** A search hit only names the anime for display when one of its titles is the query. */
+const DISPLAY_MIN_SIMILARITY = 85
+
 function titlesOf(m: AniListMedia): string[] {
   const titles = [m.title?.english, m.title?.romaji, ...(m.synonyms ?? [])]
   return titles.filter((t): t is string => Boolean(t?.trim()))
@@ -141,8 +151,8 @@ function aniListId(anime: AtAnime): number | null {
  * own name and by its franchise name ("Shingeki no Kyojin"), whose entry has
  * the richest synonyms; a known AniList id is looked up directly too.
  */
-async function fetchAniListTitles(animes: AtAnime[]): Promise<Map<number, string[]>> {
-  const out = new Map<number, string[]>()
+async function fetchAniListTitles(animes: AtAnime[]): Promise<Map<number, AniListNames>> {
+  const out = new Map<number, AniListNames>()
   if (animes.length === 0) return out
 
   const searches: { animeId: number; year: number | null; query: string }[] = []
@@ -171,7 +181,16 @@ fragment m on Media { id seasonYear title { romaji english native } synonyms }`
   const variables: Record<string, unknown> = withIds ? { ids: [...byAniListId.keys()] } : {}
   searches.forEach((s, i) => (variables[`q${i}`] = s.query))
 
-  const add = (animeId: number, titles: string[]) => out.set(animeId, [...(out.get(animeId) ?? []), ...titles])
+  // The first trusted entry names the anime: the AniList id lookup, then the full-name search
+  const add = (animeId: number, m: AniListMedia, trusted: boolean) => {
+    const entry = out.get(animeId) ?? { titles: [], english: null, romaji: null }
+    entry.titles.push(...titlesOf(m))
+    if (trusted && !entry.english && !entry.romaji) {
+      entry.english = m.title?.english?.trim() || null
+      entry.romaji = m.title?.romaji?.trim() || null
+    }
+    out.set(animeId, entry)
+  }
   try {
     const res = await fetch(ANILIST_API, {
       method: "POST",
@@ -182,13 +201,16 @@ fragment m on Media { id seasonYear title { romaji english native } synonyms }`
     const data = (await res.json()) as { data?: Record<string, { media?: AniListMedia[] } | null> }
     for (const m of data.data?.ids?.media ?? []) {
       const animeId = byAniListId.get(m.id)
-      if (animeId !== undefined) add(animeId, titlesOf(m))
+      if (animeId !== undefined) add(animeId, m, true)
     }
     searches.forEach((s, i) => {
       const media = data.data?.[`s${i}`]?.media ?? []
       // Prefer the entry that aired the same year, the search can surface a sequel first
       const best = media.find((m) => s.year !== null && m.seasonYear === s.year) ?? media[0]
-      if (best) add(s.animeId, titlesOf(best))
+      if (!best) return
+      const query = normalize(s.query)
+      const trusted = titlesOf(best).some((t) => similarity(normalize(t), query) >= DISPLAY_MIN_SIMILARITY)
+      add(s.animeId, best, trusted)
     })
   } catch {
     // AniList down: AnimeThemes names and the built-in French titles still work
@@ -257,7 +279,7 @@ function coverOf(anime: AtAnime | undefined): string | null {
 export function buildMatch(
   song: AtSong,
   details: Map<number, AtAnime>,
-  aniListTitles: Map<number, string[]> = new Map(),
+  aniListTitles: Map<number, AniListNames> = new Map(),
   deezerArtist?: string
 ): AnimeMatch | null {
   const themes = (song.animethemes ?? []).filter((t) => t.anime && toTheme(t))
@@ -280,19 +302,23 @@ export function buildMatch(
   for (const { anime } of entries) {
     titles.push(anime.name)
     for (const syn of anime.animesynonyms ?? []) if (syn.text) titles.push(syn.text)
-    titles.push(...(aniListTitles.get(anime.id) ?? []))
+    titles.push(...(aniListTitles.get(anime.id)?.titles ?? []))
   }
   const { names, acronyms } = expandAnswers(titles)
 
   const artists = new Set((song.artists ?? []).map((a) => a.name).filter(Boolean))
   if (deezerArtist) artists.add(deezerArtist)
 
+  const name = bestKnownName(primary.anime.name, aniListTitles.get(primary.anime.id))
+  const originalName = normalize(name) === normalize(primary.anime.name) ? undefined : primary.anime.name
+
   return {
-    names,
+    names: names.includes(name) ? names : [name, ...names],
     acronyms,
     artists: [...artists],
     reveal: {
-      name: primary.anime.name,
+      name,
+      ...(originalName ? { originalName } : {}),
       themes: primary.themes,
       year: primary.anime.year ?? null,
       season: primary.anime.season ?? null,

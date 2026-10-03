@@ -3,6 +3,7 @@ import {
   GameMode,
   GamePhase,
   GuessMatch,
+  SpamKind,
   Team,
   parseDeezerPlaylistId,
   teamTotals,
@@ -21,7 +22,7 @@ import {
   removePlayer,
   restartToLobby,
   buildHint,
-  allowReaction,
+  rateLimit,
   rooms,
   joinRefusal,
   JoinRefusal,
@@ -371,10 +372,14 @@ test("les points de la manche s'additionnent puis repartent a zero", async () =>
 
 test("les reactions sont limitees contre le spam", async () => {
   const r = await room("RE1", ["a"])
-  expect(allowReaction("RE1", "a")).toBe(true)
-  expect(allowReaction("RE1", "a")).toBe(false)
+  expect(rateLimit("RE1", "a", SpamKind.Reaction)?.ok).toBe(true)
+  // Cooldown de 400 ms, silencieux
+  expect(rateLimit("RE1", "a", SpamKind.Reaction)).toMatchObject({ ok: false, notify: false })
   await Bun.sleep(420)
-  expect(allowReaction("RE1", "a")).toBe(true)
+  expect(rateLimit("RE1", "a", SpamKind.Reaction)?.ok).toBe(true)
+  // Le chat a son propre budget
+  expect(rateLimit("RE1", "a", SpamKind.Chat, "salut")?.ok).toBe(true)
+  expect(rateLimit("RE1", "nobody", SpamKind.Chat, "salut")).toBeNull()
   r.cleanup()
 })
 
