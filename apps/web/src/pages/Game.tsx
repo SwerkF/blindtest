@@ -24,6 +24,7 @@ import type {
   RoundOutcome,
   RoundPublic,
   Reaction,
+  TeamScores,
   WsServerMessage,
 } from "@blindmusic/shared"
 import {
@@ -36,7 +37,12 @@ import {
   ErrorCode,
   HintKind,
   REACTIONS,
+  TEAMS,
+  TEAM_LABEL,
+  Team,
+  teamTotals,
   themeLabel,
+  winningTeam,
 } from "@blindmusic/shared"
 import { useWs } from "@/hooks/useWs"
 import { useProfile } from "@/hooks/useProfile"
@@ -48,6 +54,7 @@ import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import Modal from "@/components/Modal"
+import { TEAM_PLURAL, TEAM_STYLE, TeamResult } from "@/utils/teams"
 
 interface ChatMsg {
   id: number
@@ -79,6 +86,8 @@ interface EndState {
   scores: Record<string, number>
   playerNames: Record<string, string>
   tracks: PlayedTrack[]
+  teams?: Record<string, Team>
+  teamScores?: TeamScores
 }
 
 const MATCH_LABEL: Record<GuessMatch, string> = {
@@ -213,6 +222,30 @@ function FoundBadges({ player, anime }: { player: PlayerPublic; anime: boolean }
   )
 }
 
+/** Blue vs red totals, the side ahead drawn bolder. */
+function TeamScoreboard({ totals }: { totals: TeamScores }) {
+  const leader = winningTeam(totals)
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {TEAMS.map((team) => (
+        <div
+          key={team}
+          className={`rounded-xl border px-3 py-2 text-center transition-opacity ${TEAM_STYLE[team].border} ${
+            TEAM_STYLE[team].soft
+          } ${leader && leader !== team ? "opacity-70" : ""}`}
+        >
+          <p className={`text-[11px] font-bold uppercase tracking-wider ${TEAM_STYLE[team].text}`}>
+            {TEAM_LABEL[team]}
+          </p>
+          <p key={totals[team]} className="text-2xl font-black text-ink tabular-nums animate-pop">
+            {totals[team]}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Gold crown with a glint, for the player in the lead. */
 function LeaderCrown() {
   return (
@@ -220,6 +253,34 @@ function LeaderCrown() {
       <span className="crown w-6 h-6" />
     </span>
   )
+}
+
+/** End-of-game headline for team mode: who won, or a draw. */
+function TeamVerdict({ totals }: { totals: TeamScores }) {
+  const winner = winningTeam(totals)
+  return (
+    <div className="mt-4 w-full max-w-md flex flex-col items-center gap-3 animate-rise">
+      <p className={`text-xl font-black ${winner ? TEAM_STYLE[winner].text : "text-ink"}`}>
+        {winner ? `Victoire des ${TEAM_PLURAL[winner]} !` : "Égalité parfaite !"}
+      </p>
+      <div className="w-full">
+        <TeamScoreboard totals={totals} />
+      </div>
+    </div>
+  )
+}
+
+/** What the history keeps about our team, when the game was played in teams. */
+function myTeamResult(
+  teams: Record<string, Team> | undefined,
+  totals: TeamScores | undefined,
+  playerId: string
+) {
+  const team = teams?.[playerId]
+  if (!team || !totals) return undefined
+  const winner = winningTeam(totals)
+  const result = winner === null ? TeamResult.Draw : winner === team ? TeamResult.Win : TeamResult.Loss
+  return { team, result, blue: totals[Team.Blue], red: totals[Team.Red] }
 }
 
 export default function Game() {
@@ -256,6 +317,8 @@ export default function Game() {
   /** Emotes drifting up the stage for everyone to see. */
   const [floaters, setFloaters] = useState<Floater[]>([])
   const [confirmLeave, setConfirmLeave] = useState(false)
+  /** Team mode: points kept from players who left mid-game. */
+  const [teamBank, setTeamBank] = useState<TeamScores | null>(null)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const guessInputRef = useRef<HTMLInputElement>(null)
@@ -291,6 +354,7 @@ export default function Game() {
         case "lobby:update":
           setPlayers(msg.players)
           setScores(Object.fromEntries(msg.players.map((p) => [p.id, p.score])))
+          setTeamBank(msg.teamBank ?? null)
           if (msg.settings) {
             settingsRef.current = msg.settings
             setSettings(msg.settings)
@@ -304,6 +368,7 @@ export default function Game() {
           setEndState(null)
           setOutcomes({})
           setScores({})
+          setTeamBank(null)
           setReveal(null)
           setRound(null)
           setPhase(GamePhase.Playing)
@@ -441,7 +506,13 @@ export default function Game() {
         }
 
         case "game:end":
-          setEndState({ scores: msg.scores, playerNames: msg.playerNames, tracks: msg.tracks })
+          setEndState({
+            scores: msg.scores,
+            playerNames: msg.playerNames,
+            tracks: msg.tracks,
+            teams: msg.teams,
+            teamScores: msg.teamScores,
+          })
           setOutcomes(msg.outcomes)
           setScores(msg.scores)
           setPhase(GamePhase.End)
@@ -455,6 +526,7 @@ export default function Game() {
               rank: place > 0 ? place : ranking.length,
               score: msg.scores[session.playerId] ?? 0,
               playerCount: ranking.length,
+              team: myTeamResult(msg.teams, msg.teamScores, session.playerId),
               tracks: msg.tracks.map((track) => ({
                 title: track.anime?.name ?? track.title,
                 artist: track.anime ? `${track.title} — ${track.artist}` : track.artist,
@@ -497,6 +569,19 @@ export default function Game() {
   const sortedPlayers = useMemo(
     () => [...players].sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0)),
     [players, scores]
+  )
+  const teamMode = settings?.teamMode === true
+  // Team mode groups each side together, best first within it
+  const listedPlayers = useMemo(
+    () =>
+      teamMode
+        ? TEAMS.flatMap((team) => sortedPlayers.filter((p) => p.team === team))
+        : sortedPlayers,
+    [teamMode, sortedPlayers]
+  )
+  const liveTeamScores = useMemo(
+    () => teamTotals(Object.fromEntries(players.map((p) => [p.id, p.team])), scores, teamBank),
+    [players, scores, teamBank]
   )
   // The crown only goes to a clear, scoring leader
   const leaderId = useMemo(() => {
@@ -584,8 +669,13 @@ export default function Game() {
           <h3 className="font-bold text-ink text-sm uppercase tracking-wider">Joueurs</h3>
           <SettingsMenu />
         </div>
+        {teamMode && (
+          <div className="p-3 border-b border-edge">
+            <TeamScoreboard totals={liveTeamScores} />
+          </div>
+        )}
         <ul className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-          {sortedPlayers.map((p, i) => {
+          {listedPlayers.map((p, i) => {
             const total = scores[p.id] ?? 0
             const status = !p.connected
               ? PlayerStatus.Offline
@@ -593,14 +683,22 @@ export default function Game() {
                 ? PlayerStatus.Typing
                 : PlayerStatus.Online
             const bubble = bubbles[p.id]
+            // Ranks restart within each team
+            const rank = teamMode ? listedPlayers.slice(0, i).filter((o) => o.team === p.team).length : i
             return (
               <li
                 key={p.id}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 animate-rise hover:brightness-105 ${
                   p.id === session.playerId ? "bg-accent/10 border border-accent/20" : "bg-edge/40"
                 } ${p.connected ? "" : "opacity-60"}`}
+                style={teamMode ? { boxShadow: `inset 4px 0 0 ${TEAM_STYLE[p.team].color}` } : undefined}
               >
-                <span className="text-xs text-muted font-mono w-4 text-center">{i + 1}</span>
+                <span
+                  className={`text-xs font-mono w-4 text-center ${teamMode ? `font-bold ${TEAM_STYLE[p.team].text}` : "text-muted"}`}
+                  title={teamMode ? `Équipe ${TEAM_LABEL[p.team]}` : undefined}
+                >
+                  {rank + 1}
+                </span>
                 <div className="relative shrink-0">
                   {p.id === leaderId && <LeaderCrown />}
                   <Avatar
@@ -680,6 +778,7 @@ export default function Game() {
             <div className="flex flex-col items-center mb-8">
               <Trophy size={44} weight="duotone" className="text-accent mb-3 animate-pop" />
               <h2 className="text-3xl font-black text-ink">Partie terminée</h2>
+              {endState.teamScores && <TeamVerdict totals={endState.teamScores} />}
             </div>
 
             <div className="max-w-md mx-auto flex flex-col gap-2 mb-10">
@@ -694,6 +793,12 @@ export default function Game() {
                   <span className="text-xl font-black w-7">{i + 1}</span>
                   <Avatar name={players.find((p) => p.id === id)?.avatarSeed || endState.playerNames[id] || id} size={48} />
                   <span className="font-semibold flex-1 truncate">{endState.playerNames[id]}</span>
+                  {endState.teams?.[id] && (
+                    <span
+                      title={`Équipe ${TEAM_LABEL[endState.teams[id]]}`}
+                      className={`w-2.5 h-2.5 rounded-full shrink-0 ${TEAM_STYLE[endState.teams[id]].dot}`}
+                    />
+                  )}
                   <span className="font-bold text-lg tabular-nums">{score}</span>
                 </div>
               ))}

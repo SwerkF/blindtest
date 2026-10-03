@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test"
-import { GameMode, GamePhase, GuessMatch, parseDeezerPlaylistId, type LobbySettings, type WsServerMessage } from "@blindmusic/shared"
+import {
+  GameMode,
+  GamePhase,
+  GuessMatch,
+  Team,
+  parseDeezerPlaylistId,
+  teamTotals,
+  winningTeam,
+  type LobbySettings,
+  type WsServerMessage,
+} from "@blindmusic/shared"
 import { cleanTitle, type Track } from "@/deezer"
 import {
   createRoom,
@@ -16,6 +26,10 @@ import {
   joinRefusal,
   JoinRefusal,
   setAccess,
+  setTeam,
+  shuffleTeams,
+  getTeamScores,
+  getEndSummary,
 } from "@/game/engine"
 
 const TRACK: Track = {
@@ -305,4 +319,107 @@ test("mot de passe et arrivee en cours de partie", async () => {
   setAccess("AC1", "", false)
   expect(joinRefusal("AC1", undefined)).toBe(JoinRefusal.InProgress)
   r.cleanup()
+})
+
+function teamsIn(code: string): Record<string, Team> {
+  return Object.fromEntries([...rooms.get(code)!.players.values()].map((p) => [p.id, p.team]))
+}
+
+test("les nouveaux joueurs rejoignent l'equipe la plus petite", () => {
+  createRoom("TM1", "a", "a", "a", () => {})
+  addPlayer("TM1", "b", "b", "b", () => {})
+  addPlayer("TM1", "c", "c", "c", () => {})
+  expect(teamsIn("TM1")).toEqual({ a: Team.Blue, b: Team.Red, c: Team.Blue })
+
+  // Bleu a deux joueurs, Rouge un seul : le suivant va chez les Rouges
+  expect(setTeam("TM1", "c", Team.Red)).toBe(true)
+  addPlayer("TM1", "d", "d", "d", () => {})
+  expect(teamsIn("TM1").d).toBe(Team.Blue)
+  ;["a", "b", "c", "d"].forEach((p) => removePlayer("TM1", p))
+})
+
+test("changer d'equipe passe par le serveur et est refuse en pleine manche", async () => {
+  const inbox: WsServerMessage[] = []
+  createRoom("TM2", "a", "a", "a", (m) => inbox.push(m))
+  registerSocket("TM2", "a", (m) => inbox.push(m))
+  expect(setTeam("TM2", "a", Team.Red)).toBe(true)
+  const update = [...inbox].reverse().find((m) => m.type === "lobby:update")
+  expect(update?.type === "lobby:update" && update.players[0].team).toBe(Team.Red)
+
+  await startGame("TM2", { ...SETTINGS, teamMode: true }, [TRACK], { countdownMs: 0 })
+  expect(setTeam("TM2", "a", Team.Blue)).toBe(false)
+  expect(shuffleTeams("TM2")).toBe(false)
+  expect(teamsIn("TM2").a).toBe(Team.Red)
+  removePlayer("TM2", "a")
+})
+
+test("les equipes aleatoires sont equilibrees", () => {
+  const ids = ["a", "b", "c", "d", "e"]
+  createRoom("TM3", "a", "a", "a", () => {})
+  for (const id of ids.slice(1)) addPlayer("TM3", id, id, id, () => {})
+  ids.forEach((id) => setTeam("TM3", id, Team.Red))
+
+  for (let round = 0; round < 20; round++) {
+    expect(shuffleTeams("TM3")).toBe(true)
+    const counts = Object.values(teamsIn("TM3")).reduce(
+      (acc, team) => ({ ...acc, [team]: acc[team] + 1 }),
+      { [Team.Blue]: 0, [Team.Red]: 0 }
+    )
+    expect(Math.abs(counts[Team.Blue] - counts[Team.Red])).toBeLessThanOrEqual(1)
+  }
+  ids.forEach((id) => removePlayer("TM3", id))
+})
+
+test("le score d'equipe est la somme des scores de ses membres", async () => {
+  createRoom("TM4", "a", "a", "a", () => {})
+  addPlayer("TM4", "b", "b", "b", () => {})
+  addPlayer("TM4", "c", "c", "c", () => {})
+  // a et c en Bleu, b en Rouge
+  await startGame("TM4", { ...SETTINGS, teamMode: true }, [TRACK], { countdownMs: 0 })
+  await Bun.sleep(5)
+
+  processGuess("TM4", "a", "Céline Dion Sous le vent") // 20
+  processGuess("TM4", "b", "Céline Dion Sous le vent") // 18
+  processGuess("TM4", "c", "Céline Dion") // 5
+  expect(getTeamScores("TM4")).toEqual({ [Team.Blue]: 25, [Team.Red]: 18 })
+  ;["a", "b", "c"].forEach((p) => removePlayer("TM4", p))
+})
+
+test("un joueur qui quitte en cours de partie laisse ses points a son equipe", async () => {
+  createRoom("TM5", "a", "a", "a", () => {})
+  addPlayer("TM5", "b", "b", "b", () => {})
+  await startGame("TM5", { ...SETTINGS, teamMode: true }, [TRACK], { countdownMs: 0 })
+  await Bun.sleep(5)
+
+  processGuess("TM5", "b", "Céline Dion Sous le vent")
+  removePlayer("TM5", "b")
+  expect(getTeamScores("TM5")).toEqual({ [Team.Blue]: 0, [Team.Red]: 20 })
+
+  // La fin de partie annonce l'equipe gagnante, points des partants compris
+  rooms.get("TM5")!.phase = GamePhase.End
+  const end = getEndSummary("TM5")
+  expect(end?.type === "game:end" && end.teamScores).toEqual({ [Team.Blue]: 0, [Team.Red]: 20 })
+  expect(end?.type === "game:end" && end.teams).toEqual({ a: Team.Blue })
+
+  // Une nouvelle partie repart de zero
+  await startGame("TM5", { ...SETTINGS, teamMode: true }, [TRACK], { countdownMs: 0 })
+  expect(getTeamScores("TM5")).toEqual({ [Team.Blue]: 0, [Team.Red]: 0 })
+  removePlayer("TM5", "a")
+})
+
+test("sans mode equipe, la fin de partie ne parle pas d'equipes", async () => {
+  createRoom("TM6", "a", "a", "a", () => {})
+  await startGame("TM6", SETTINGS, [TRACK], { countdownMs: 0 })
+  rooms.get("TM6")!.phase = GamePhase.End
+  const end = getEndSummary("TM6")
+  expect(end?.type === "game:end" && end.teamScores).toBeUndefined()
+  removePlayer("TM6", "a")
+})
+
+test("teamTotals et winningTeam gerent l'egalite et une equipe vide", () => {
+  const totals = teamTotals({ a: Team.Blue, b: Team.Blue }, { a: 10, b: 4 }, { [Team.Red]: 3 })
+  expect(totals).toEqual({ [Team.Blue]: 14, [Team.Red]: 3 })
+  expect(winningTeam(totals)).toBe(Team.Blue)
+  expect(winningTeam({ [Team.Blue]: 7, [Team.Red]: 7 })).toBeNull()
+  expect(winningTeam(teamTotals({}, {}))).toBeNull()
 })

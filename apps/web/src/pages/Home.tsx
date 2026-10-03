@@ -11,7 +11,8 @@ import {
 } from "@phosphor-icons/react"
 import { ApiError, api, loadSession, saveSession } from "@/utils/api"
 import { loadHistory, type GameHistoryEntry } from "@/utils/storage"
-import { GamePhase } from "@blindmusic/shared"
+import { GamePhase, TEAM_LABEL } from "@blindmusic/shared"
+import { TEAM_RESULT_LABEL, TEAM_STYLE } from "@/utils/teams"
 import { useProfile } from "@/hooks/useProfile"
 import Avatar from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
@@ -296,6 +297,12 @@ export default function Home() {
                 <details className="bg-canvas/60 border border-edge rounded-xl px-4 py-3">
                   <summary className="cursor-pointer text-sm text-ink font-medium">
                     {formatPlayedAt(entry.playedAt)} · #{entry.rank}/{entry.playerCount} · {entry.score} pts
+                    {entry.team && (
+                      <span className={`ml-1 font-semibold ${TEAM_STYLE[entry.team.team].text}`}>
+                        · Équipe {TEAM_LABEL[entry.team.team]} : {TEAM_RESULT_LABEL[entry.team.result]} (
+                        {entry.team.blue} – {entry.team.red})
+                      </span>
+                    )}
                   </summary>
                   <ul className="mt-2 flex flex-col gap-1">
                     {entry.tracks.map((track, index) => (
