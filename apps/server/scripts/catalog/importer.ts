@@ -37,7 +37,7 @@ export async function importEntries(
     select: { id: true, isrc: true, deezerTrackId: true, available: true },
   })
   const byIsrc = new Map(existing.map((e) => [e.isrc, e]))
-  const byTrack = new Map(existing.map((e) => [e.deezerTrackId, e]))
+  const byTrack = new Map(existing.map((e) => [Number(e.deezerTrackId), e]))
   const availableBefore = existing.filter((e) => e.available).length
   if (!options.force && availableBefore > 0 && entries.length < availableBefore * MIN_CATALOG_RATIO) {
     throw new Error(

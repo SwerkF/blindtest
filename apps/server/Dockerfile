@@ -16,4 +16,6 @@ WORKDIR /app/apps/server
 RUN bunx prisma generate
 
 EXPOSE 3001
-CMD ["sh", "-c", "bunx prisma db push && bun prisma/seed.ts && bun src/index.ts"]
+# db push refuses lossy-looking changes (e.g. Int -> BigInt, which keeps every value): set
+# PRISMA_ACCEPT_DATA_LOSS=1 for the one deploy that needs it, then remove it.
+CMD ["sh", "-c", "bunx prisma db push ${PRISMA_ACCEPT_DATA_LOSS:+--accept-data-loss} && bun prisma/seed.ts && bun src/index.ts"]

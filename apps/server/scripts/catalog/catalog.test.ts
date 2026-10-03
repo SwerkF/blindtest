@@ -197,7 +197,7 @@ test("import : crée, met à jour la rareté, désactive les absents sans rien s
   expect(rows).toHaveLength(5)
   expect(rows.find((r) => r.isrc === "IMP1")?.rarity).toBe(CardRarity.Legendaire)
   expect(rows.find((r) => r.isrc === "IMP2")?.needsRefresh).toBe(false)
-  expect(rows.find((r) => r.isrc === "IMP3-NEW")?.deezerTrackId).toBe(5003)
+  expect(Number(rows.find((r) => r.isrc === "IMP3-NEW")?.deezerTrackId)).toBe(5003)
   expect(rows.find((r) => r.isrc === "IMP4")?.available).toBe(false)
   expect(JSON.parse(rows[0]!.pools)).toEqual(["genre:rap"])
 })
@@ -207,4 +207,19 @@ test("import : garde-fou contre un run qui vide le catalogue", async () => {
   await expect(importEntries(db.client, [], { log: quiet })).rejects.toThrow("vide")
   await expect(importEntries(db.client, [entry(1)], { log: quiet })).rejects.toThrow("--force")
   expect((await importEntries(db.client, [entry(1)], { force: true, log: quiet })).disabled).toBe(3)
+})
+
+test("ids Deezer au-delà de 2^31 : importés, relus et sérialisables en JSON", async () => {
+  const quiet = () => {}
+  const BIG = 3_000_000_000
+  await importEntries(db.client, [entry(1), entry(2, { deezerTrackId: BIG })], { force: true, log: quiet })
+  const row = await db.client.cardPoolEntry.findUnique({ where: { deezerTrackId: BIG } })
+  expect(row?.deezerTrackId).toBe(BigInt(BIG))
+  // Réimport : l'entrée est retrouvée par sa piste (clé Number) et mise à jour, pas dupliquée
+  const again = await importEntries(db.client, [entry(1), entry(2, { deezerTrackId: BIG, rarity: CardRarity.Epique })], {
+    force: true,
+    log: quiet,
+  })
+  expect(again).toMatchObject({ created: 0, updated: 2, skipped: 0 })
+  expect(await db.client.cardPoolEntry.count({ where: { deezerTrackId: BIG } })).toBe(1)
 })
