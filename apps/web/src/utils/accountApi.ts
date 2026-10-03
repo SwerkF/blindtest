@@ -27,6 +27,9 @@ export const accountApi = {
   updateProfile: (pseudo: string, avatarSeed: string) =>
     req<AccountUser>("/auth/me", { method: "PATCH", body: JSON.stringify({ pseudo, avatarSeed }) }),
 
+  setUseDiscordAvatar: (useDiscordAvatar: boolean) =>
+    req<AccountUser>("/auth/me", { method: "PATCH", body: JSON.stringify({ useDiscordAvatar }) }),
+
   logout: () => req<void>("/auth/logout", { method: "POST", body: "{}" }),
 
   deleteAccount: () => req<void>("/auth/me", { method: "DELETE", body: "{}" }),

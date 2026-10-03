@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom"
-import { CaretRight, DiscordLogo } from "@phosphor-icons/react"
+import { CaretRight } from "@phosphor-icons/react"
+import DiscordIcon from "@/components/DiscordIcon"
 import { useAuth } from "@/hooks/useAuth"
 import { discordLoginUrl } from "@/utils/accountApi"
 
@@ -25,15 +26,20 @@ export default function DiscordLoginButton({ className = "" }: { className?: str
 
   if (!discordEnabled) return null
   return (
-    <div className={`flex flex-col items-center gap-1.5 ${className}`}>
+    <div className={`w-full flex flex-col items-center gap-3 ${className}`}>
+      <div className="w-full flex items-center gap-3 text-xs font-medium text-muted uppercase tracking-wider">
+        <span className="flex-1 h-px bg-edge" />
+        ou
+        <span className="flex-1 h-px bg-edge" />
+      </div>
       <a
         href={discordLoginUrl()}
-        className="inline-flex items-center gap-2 bg-[#5865F2] text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
+        className="w-full flex items-center justify-center gap-2.5 bg-[#5865F2] text-white font-semibold px-4 py-3 rounded-xl hover:opacity-90 transition-opacity"
       >
-        <DiscordLogo size={18} weight="fill" />
+        <DiscordIcon size={22} />
         Se connecter avec Discord
       </a>
-      <p className="text-xs text-muted">Facultatif : garde ton historique, tes succès et tes amis</p>
+      <p className="text-xs text-muted text-center">Facultatif : garde ton historique, tes succès et tes amis</p>
     </div>
   )
 }

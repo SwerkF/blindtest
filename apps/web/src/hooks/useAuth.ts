@@ -32,6 +32,19 @@ export function useAuth() {
     forget()
   }
 
+  /** Throws on failure; the cached account is updated on success. */
+  const setUseDiscordAvatar = async (value: boolean) => {
+    const user = await accountApi.setUseDiscordAvatar(value)
+    queryClient.setQueryData<MeResponse>([AccountQueryKey.Me], (prev) => ({ ...(prev ?? GUEST), user }))
+  }
+
   const data = query.data ?? GUEST
-  return { user: data.user, discordEnabled: data.discordEnabled, loading: query.isLoading, logout, deleteAccount }
+  return {
+    user: data.user,
+    discordEnabled: data.discordEnabled,
+    loading: query.isLoading,
+    logout,
+    deleteAccount,
+    setUseDiscordAvatar,
+  }
 }

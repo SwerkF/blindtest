@@ -1,6 +1,7 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyRequest } from "fastify"
 import { rooms, createRoom, addPlayer, joinRefusal, JoinRefusal, linkUser } from "@/game/engine"
 import { userFromCookies } from "@/account/session"
+import { playerAvatarUrl } from "@/account/users"
 
 function genCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase()
@@ -15,6 +16,12 @@ function avatarSeedFrom(body: { playerName?: string; avatarSeed?: string }): str
   return seed || body.playerName?.trim() || "joueur"
 }
 
+/** Ties the player to the Discord account behind the request, if any. */
+async function linkAccount(req: FastifyRequest, code: string, playerId: string) {
+  const user = await userFromCookies(req.headers.cookie).catch(() => null)
+  linkUser(code, playerId, user?.id ?? null, user ? playerAvatarUrl(user) : null)
+}
+
 export default async function lobbiesRoute(fastify: FastifyInstance) {
   fastify.post<{ Body: { playerName: string; avatarSeed?: string } }>("/lobbies", async (req, reply) => {
     const { playerName } = req.body
@@ -24,7 +31,7 @@ export default async function lobbiesRoute(fastify: FastifyInstance) {
     const playerId = genId()
     // send is a no-op here; the real send is registered on WS connect
     createRoom(code, playerId, playerName.trim(), avatarSeedFrom(req.body), () => {})
-    linkUser(code, playerId, (await userFromCookies(req.headers.cookie).catch(() => null))?.id ?? null)
+    await linkAccount(req, code, playerId)
     return { code, playerId, playerName: playerName.trim() }
   })
 
@@ -61,7 +68,7 @@ export default async function lobbiesRoute(fastify: FastifyInstance) {
       const playerId = genId()
       const joined = addPlayer(code.toUpperCase(), playerId, playerName.trim(), avatarSeedFrom(req.body), () => {})
       if (!joined) return reply.status(409).send({ error: "Impossible de rejoindre" })
-      linkUser(code.toUpperCase(), playerId, (await userFromCookies(req.headers.cookie).catch(() => null))?.id ?? null)
+      await linkAccount(req, code.toUpperCase(), playerId)
       return { code: code.toUpperCase(), playerId, playerName: playerName.trim() }
     }
   )

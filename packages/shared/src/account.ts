@@ -71,6 +71,8 @@ export interface PublicUser {
   pseudo: string
   avatarSeed: string | null
   discordAvatarUrl: string
+  /** Shows the Discord profile picture instead of the Blobatar. */
+  useDiscordAvatar: boolean
 }
 
 export interface AccountUser extends PublicUser {

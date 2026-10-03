@@ -31,9 +31,11 @@ interface AvatarProps {
   animate?: "hover" | "always"
   /** Shows presence: the blob "thinks" while typing and dozes off when disconnected. */
   status?: PlayerStatus
+  /** Discord profile picture shown instead of the blob. */
+  imageUrl?: string | null
 }
 
-const Avatar = ({ name, size = 36, onEdit, animate = "hover", status }: AvatarProps) => {
+const Avatar = ({ name, size = 36, onEdit, animate = "hover", status, imageUrl }: AvatarProps) => {
   const config = useMemo(() => decodeAvatar(name || "joueur"), [name])
   const expression =
     status === PlayerStatus.Typing
@@ -41,7 +43,17 @@ const Avatar = ({ name, size = 36, onEdit, animate = "hover", status }: AvatarPr
       : status === PlayerStatus.Offline
         ? sleepy
         : EXPRESSION_VALUE[config.expression]
-  const blob = (
+  const blob = imageUrl ? (
+    <img
+      src={imageUrl}
+      alt=""
+      width={size}
+      height={size}
+      draggable={false}
+      className={`shrink-0 block rounded-full object-cover ${status === PlayerStatus.Offline ? "grayscale" : ""}`}
+      style={{ width: size, height: size }}
+    />
+  ) : (
     <Blobatar
       name={config.seed || "joueur"}
       size={size}
@@ -57,7 +69,7 @@ const Avatar = ({ name, size = 36, onEdit, animate = "hover", status }: AvatarPr
   const dot = Math.max(8, Math.min(14, Math.round(size * 0.22)))
   const notch = dot / 2 + 2.5
   // Blobs do not reach the corners of their box: pull the dot in so it bites into the shape
-  const inset = Math.round(size * 0.08)
+  const inset = imageUrl ? Math.round(size * 0.04) : Math.round(size * 0.08)
   const offset = inset + dot / 2
   const centre = `calc(100% - ${offset}px) calc(100% - ${offset}px)`
   const mask = `radial-gradient(circle at ${centre}, transparent ${notch}px, #000 ${notch + 0.5}px)`

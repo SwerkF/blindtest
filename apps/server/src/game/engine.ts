@@ -49,6 +49,8 @@ interface PlayerState {
   team: Team
   /** Discord account behind this player, null for guests. */
   userId: string | null
+  /** Discord profile picture when the account opted in. */
+  avatarUrl: string | null
   /** Quickest title (or anime) find this game, for achievements. */
   fastestFindMs: number | null
   send: (msg: WsServerMessage) => void
@@ -116,6 +118,7 @@ function newPlayer(
     outcomes: [],
     team,
     userId: null,
+    avatarUrl: null,
     fastestFindMs: null,
     send,
   }
@@ -174,6 +177,8 @@ function toPublic(room: Room): PlayerPublic[] {
     roundPoints: p.roundPoints,
     connected: p.connected,
     team: p.team,
+    discord: p.userId !== null,
+    avatarUrl: p.avatarUrl,
   }))
 }
 
@@ -971,9 +976,24 @@ function recordFind(room: Room, player: PlayerState) {
 }
 
 /** Ties the player to a logged-in account so the game lands in their history. */
-export function linkUser(code: string, playerId: string, userId: string | null) {
+export function linkUser(code: string, playerId: string, userId: string | null, avatarUrl: string | null = null) {
   const player = rooms.get(code)?.players.get(playerId)
-  if (player) player.userId = userId
+  if (!player) return
+  player.userId = userId
+  player.avatarUrl = userId ? avatarUrl : null
+}
+
+/** The account switched between its Discord picture and its Blobatar: update every room it plays in. */
+export function setUserAvatarUrl(userId: string, avatarUrl: string | null) {
+  for (const room of rooms.values()) {
+    let changed = false
+    for (const p of room.players.values()) {
+      if (p.userId !== userId || p.avatarUrl === avatarUrl) continue
+      p.avatarUrl = avatarUrl
+      changed = true
+    }
+    if (changed) broadcastLobby(room.code)
+  }
 }
 
 /** Room membership of an account, to check that an inviter is really in the lobby. */

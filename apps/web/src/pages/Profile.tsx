@@ -14,6 +14,7 @@ import {
 } from "@phosphor-icons/react"
 import { ACHIEVEMENTS, GameMode, type GameHistoryItem } from "@blindmusic/shared"
 import { useAuth } from "@/hooks/useAuth"
+import DiscordAvatarToggle from "@/components/DiscordAvatarToggle"
 import { useProfile } from "@/hooks/useProfile"
 import { AccountQueryKey, accountApi, discordLoginUrl } from "@/utils/accountApi"
 import Avatar from "@/components/Avatar"
@@ -105,7 +106,12 @@ export default function Profile() {
         ) : (
           <>
             <div className="bg-surface border border-edge rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-5">
-              <Avatar name={user.avatarSeed || profile.avatarSeed} size={96} animate="always" />
+              <Avatar
+                name={user.avatarSeed || profile.avatarSeed}
+                size={96}
+                animate="always"
+                imageUrl={user.useDiscordAvatar ? user.discordAvatarUrl : null}
+              />
               <div className="flex-1 min-w-0 text-center sm:text-left">
                 <h1 className="text-2xl font-black text-ink truncate">{user.pseudo}</h1>
                 <p className="text-sm text-muted flex items-center justify-center sm:justify-start gap-1.5 mt-0.5">
@@ -130,6 +136,8 @@ export default function Profile() {
                 Se déconnecter
               </button>
             </div>
+
+            <DiscordAvatarToggle className="mt-4" />
 
             <div role="tablist" className="mt-6 flex gap-1 bg-surface border border-edge rounded-2xl p-1">
               {TABS.map(({ id, label, icon: Icon }) => (

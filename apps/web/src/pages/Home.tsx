@@ -20,6 +20,7 @@ import SettingsMenu from "@/components/SettingsMenu"
 import LegalFooter from "@/components/LegalFooter"
 import Modal from "@/components/Modal"
 import DiscordLoginButton from "@/components/DiscordLoginButton"
+import { useAuth } from "@/hooks/useAuth"
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -40,6 +41,7 @@ export default function Home() {
   // Set when arriving from an invite link (/join/:code)
   const { code: invitedCode } = useParams<{ code: string }>()
   const { profile, setName, setAvatar } = useProfile()
+  const { user } = useAuth()
   const [history] = useState<GameHistoryEntry[]>(loadHistory)
   const [showHistory, setShowHistory] = useState(false)
   const [code, setCode] = useState((invitedCode ?? "").toUpperCase())
@@ -148,7 +150,13 @@ export default function Home() {
       <div className="w-full max-w-4xl grid md:grid-cols-2 bg-surface border border-edge rounded-3xl shadow-sm overflow-hidden">
         {/* Profil */}
         <div className="p-5 sm:p-8 flex flex-col items-center gap-4 md:border-r border-b md:border-b-0 border-edge">
-          <Avatar name={profile.avatarSeed} size={140} animate="always" onEdit={() => setEditingAvatar(true)} />
+          <Avatar
+            name={profile.avatarSeed}
+            size={140}
+            animate="always"
+            imageUrl={user?.useDiscordAvatar ? user.discordAvatarUrl : null}
+            onEdit={() => setEditingAvatar(true)}
+          />
           <button
             type="button"
             onClick={() => setEditingAvatar(true)}
