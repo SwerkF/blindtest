@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CardRarity, PACK_RARITIES, type PackRarity } from "@blindmusic/shared"
 import { AccountQueryKey, accountApi } from "@/utils/accountApi"
-import { CARD_STYLE } from "@/utils/rarity"
+import { CARD_STYLE, PACK_STYLE } from "@/utils/rarity"
 import PackArt from "@/components/booster/PackArt"
 import PackOpening from "@/components/booster/PackOpening"
 
@@ -35,6 +35,7 @@ export default function BoosterPanel() {
                     {count}
                   </span>
                 </div>
+                <span className="text-xs font-bold text-center leading-tight">{PACK_STYLE[rarity].label}</span>
                 <button
                   type="button"
                   disabled={count === 0 || !data.catalogReady}

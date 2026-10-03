@@ -1,5 +1,4 @@
-import { VinylRecord } from "@phosphor-icons/react"
-import type { PackRarity } from "@blindmusic/shared"
+import { PackRarity } from "@blindmusic/shared"
 import { PACK_STYLE } from "@/utils/rarity"
 
 interface PackArtProps {
@@ -11,24 +10,24 @@ interface PackArtProps {
   tearing?: boolean
 }
 
-/**
- * Placeholder look of a booster until the final designs land: a coloured wrapper
- * with a record. Swap this component (and `PACK_STYLE`) to change every pack at once.
- */
+/** Sleeve of each booster, in `public/packs`: the rarer the pack, the more ornate the sleeve. */
+const PACK_IMAGE: Record<PackRarity, string> = {
+  [PackRarity.Normal]: "/packs/normal.webp",
+  [PackRarity.Rare]: "/packs/rare.webp",
+  [PackRarity.TresRare]: "/packs/tres_rare.webp",
+  [PackRarity.Ultime]: "/packs/ultime.webp",
+}
+
+/** The booster sleeve (square, transparent corners). Swap `PACK_IMAGE` to change every pack at once. */
 export default function PackArt({ rarity, className = "", shaking = false, tearing = false }: PackArtProps) {
-  const style = PACK_STYLE[rarity]
   return (
-    <div
-      className={`relative aspect-[3/4] rounded-2xl overflow-hidden border-2 flex flex-col items-center justify-between py-4 text-white select-none ${
+    <img
+      src={PACK_IMAGE[rarity]}
+      alt={PACK_STYLE[rarity].label}
+      draggable={false}
+      className={`aspect-square object-contain select-none drop-shadow-lg ${
         shaking ? "animate-pack-shake" : ""
       } ${tearing ? "animate-pack-tear" : ""} ${className}`}
-      style={{ borderColor: style.color, background: `linear-gradient(160deg, ${style.from}, ${style.to})` }}
-    >
-      <span className="text-[10px] font-black uppercase tracking-[0.25em] opacity-90">Blindtest</span>
-      <VinylRecord size="46%" weight="duotone" className="opacity-95" />
-      <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-center px-2 leading-tight">
-        {style.label}
-      </span>
-    </div>
+    />
   )
 }
