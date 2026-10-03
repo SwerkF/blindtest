@@ -61,7 +61,8 @@ export async function grantDrop(
     notifyUser(userId, { type: "booster:earned", rarity })
     return rarity
   } catch (error) {
-    console.error("Booster drop failed", error)
+    // P2002: this game already granted its pack, which is the expected replay case
+    if ((error as { code?: unknown })?.code !== "P2002") console.error("Booster drop failed", error)
     return null
   }
 }

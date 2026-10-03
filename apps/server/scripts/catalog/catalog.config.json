@@ -1,0 +1,30 @@
+{
+  "charts": [
+    {
+      "path": "/chart/0/tracks",
+      "genre": null
+    },
+    {
+      "path": "/chart/132/tracks",
+      "genre": "pop"
+    },
+    {
+      "path": "/chart/116/tracks",
+      "genre": "rap"
+    },
+    {
+      "path": "/chart/152/tracks",
+      "genre": "rock"
+    },
+    {
+      "path": "/chart/113/tracks",
+      "genre": "electro"
+    },
+    {
+      "path": "/chart/165/tracks",
+      "genre": "rnb"
+    }
+  ],
+  "playlists": [],
+  "maxTracksPerSource": 500
+}

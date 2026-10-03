@@ -6,7 +6,10 @@
     "test": "bun test",
     "db:push": "bunx prisma db push",
     "db:seed": "bun prisma/seed.ts",
-    "generate": "bunx prisma generate"
+    "generate": "bunx prisma generate",
+    "catalog:build": "bun scripts/catalog/build.ts",
+    "catalog:import": "bun scripts/catalog/import.ts",
+    "catalog:dev": "bun scripts/catalog/dev-fixture.ts"
   },
   "dependencies": {
     "@blindmusic/shared": "workspace:*",
