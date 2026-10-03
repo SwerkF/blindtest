@@ -55,6 +55,7 @@ import { Cue, playCue } from "@/utils/audio"
 import Visualizer from "@/components/Visualizer"
 import Avatar, { PlayerStatus } from "@/components/Avatar"
 import { DiscordBadge } from "@/components/DiscordIcon"
+import ProfileName from "@/components/ProfileName"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import Modal from "@/components/Modal"
@@ -780,7 +781,9 @@ export default function Game() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-ink text-sm flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">{p.name}</span>
+                    <ProfileName userId={p.userId} className="truncate">
+                      {p.name}
+                    </ProfileName>
                     {p.discord && <DiscordBadge size={13} />}
                   </p>
                   {status === PlayerStatus.Typing ? (
@@ -862,7 +865,9 @@ export default function Game() {
                     imageUrl={players.find((p) => p.id === id)?.avatarUrl}
                   />
                   <span className="font-semibold flex-1 min-w-0 flex items-center gap-1.5">
-                    <span className="truncate">{endState.playerNames[id]}</span>
+                    <ProfileName userId={players.find((p) => p.id === id)?.userId} className="truncate">
+                      {endState.playerNames[id]}
+                    </ProfileName>
                     {players.find((p) => p.id === id)?.discord && <DiscordBadge />}
                   </span>
                   {endState.teams?.[id] && (

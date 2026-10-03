@@ -4,6 +4,7 @@ import type { GameEndSummary } from "@/game/engine"
 import { evaluateAchievements, isWin } from "@/account/achievements"
 import { notifyUser } from "@/account/presence"
 import { swerkFriendsAmong, swerkUserId } from "@/account/swerk"
+import { roundCounters } from "@/account/stats"
 
 /**
  * Stores the game in the history of every logged-in participant and unlocks
@@ -43,6 +44,7 @@ export async function persistGameResults(summary: GameEndSummary) {
           won,
           team: player.team,
           teamWon: player.teamWon,
+          ...roundCounters(player.outcomes, player.titleFindMs),
         },
       }),
       prisma.gameResult.count({ where: { userId: player.userId } }),

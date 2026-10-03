@@ -153,10 +153,80 @@ export interface GameHistoryItem {
   playedAt: string
 }
 
+/**
+ * Profile stats over every saved game. Round stats only cover games saved with
+ * round detail (`roundsTracked`); older games count for games/wins/best score only.
+ */
+export interface ProfileStats {
+  gamesPlayed: number
+  wins: number
+  /** Share of games won, 0–100, rounded. */
+  winRate: number
+  bestScore: number | null
+  /** Rounds that carry detail; round stats are null when it is 0. */
+  roundsTracked: number
+  /**
+   * "Guess moyen": average number of answers found per round, out of 3
+   * (artist, title, year), e.g. 1.4.
+   */
+  averageFound: number | null
+  /** Share of rounds where the title (or the anime) was found, 0–100. */
+  titleRate: number | null
+  /** "Guess perfect": rounds with the artist and the title found. */
+  perfectRounds: number
+  /** "Guess ultimate": rounds with the artist, the title and the year found. */
+  ultimateRounds: number
+  /** Average time to find the title, in milliseconds. */
+  averageTitleMs: number | null
+}
+
 export interface HistoryResponse {
   items: GameHistoryItem[]
   gamesPlayed: number
   wins: number
+  stats: ProfileStats
+}
+
+/** How the viewer of a public profile relates to its owner. */
+export enum FriendshipState {
+  /** The viewer is a guest: no friend button. */
+  Guest = "guest",
+  Self = "self",
+  None = "none",
+  /** The viewer sent a request that is still pending. */
+  Outgoing = "outgoing",
+  /** The profile owner asked the viewer. */
+  Incoming = "incoming",
+  Friends = "friends",
+}
+
+/** What anyone can see of an account. Never carries the Discord id, friend code or sessions. */
+export interface PublicProfileUser {
+  id: string
+  pseudo: string
+  /** Discord display name. */
+  username: string
+  avatarSeed: string | null
+  /** Discord picture, only when the owner chose it over the Blobatar. */
+  avatarUrl: string | null
+  createdAt: string
+}
+
+/** GET /users/:id — public profile (/u/:id page, profile drawer in rooms). */
+export interface PublicProfileResponse {
+  user: PublicProfileUser
+  stats: ProfileStats
+  /** Unlocked achievements only: locked (and secret) ones are never listed. */
+  achievements: UnlockedAchievement[]
+  recentGames: GameHistoryItem[]
+  friendship: FriendshipState
+  /** Pending or accepted row between the viewer and the owner, to accept/cancel/remove it. */
+  friendshipId: string | null
+}
+
+/** Whether an achievement stays hidden until unlocked (when the definition says so). */
+export function isSecretAchievement(def: AchievementDef): boolean {
+  return (def as AchievementDef & { secret?: boolean }).secret === true
 }
 
 export enum FriendRequestOutcome {
