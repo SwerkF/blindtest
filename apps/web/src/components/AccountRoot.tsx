@@ -8,11 +8,13 @@ import { AccountQueryKey } from "@/utils/accountApi"
 import { linkAccount } from "@/utils/accountSync"
 import { showToast } from "@/utils/toast"
 import Toaster from "@/components/Toaster"
+import type { HomeNavState } from "@/pages/Home"
 import ProfileDrawer from "@/components/ProfileDrawer"
 import { ProfileTab, openProfile } from "@/utils/profileDrawer"
 
 const INVITE_TOAST_MS = 20_000
 const AUTH_ERROR_PARAM = "authError"
+const ROOM_PATH = /^\/(?:lobby|game)\/([^/]+)/
 
 /**
  * Layout around every page: syncs the local profile with the Discord account,
@@ -41,6 +43,17 @@ export default function AccountRoot() {
     const search = params.toString()
     navigate(`${location.pathname}${search ? `?${search}` : ""}`, { replace: true })
   }, [navigate])
+
+  function acceptInvite(code: string) {
+    // Read at click time: the toast may outlive the page it was shown on
+    const match = ROOM_PATH.exec(location.pathname)
+    const current = match?.[1]?.toUpperCase()
+    if (current === code.toUpperCase()) return
+    const state: HomeNavState | undefined = current
+      ? { fromRoom: { code: current, path: location.pathname } }
+      : undefined
+    navigate(`/join/${code}`, { state })
+  }
 
   const refreshFriends = () => void queryClient.invalidateQueries({ queryKey: [AccountQueryKey.Friends] })
 
@@ -82,7 +95,7 @@ export default function AccountRoot() {
           text: `Salon ${msg.code}`,
           imageUrl: msg.from.discordAvatarUrl,
           durationMs: INVITE_TOAST_MS,
-          action: { label: "Rejoindre", onClick: () => navigate(`/join/${msg.code}`) },
+          action: { label: "Rejoindre", onClick: () => acceptInvite(msg.code) },
         })
         break
       case "achievement:unlocked":
