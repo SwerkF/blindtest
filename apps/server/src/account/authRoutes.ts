@@ -21,9 +21,11 @@ import {
   AVATAR_SEED_MAX_LENGTH,
   PSEUDO_MAX_LENGTH,
   playerAvatarUrl,
+  friendIds,
   toAccountUser,
   upsertDiscordUser,
 } from "@/account/users"
+import { syncSwerkFriendAchievement } from "@/account/swerk"
 import { setUserAvatarUrl } from "@/game/engine"
 
 const STATE_TTL_SECONDS = 600
@@ -76,6 +78,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
         const discordUser = await fetchDiscordUser(token)
         const user = await upsertDiscordUser(discordUser)
         const sessionCookie = await createSession(user.id)
+        // Retroactive « Ami de Swerk », also for Swerk's friends when he logs in for the first time
+        void friendIds(user.id)
+          .then((ids) => syncSwerkFriendAchievement([user.id, ...ids]))
+          .catch((error) => req.log.error(error, "Swerk achievement sync failed"))
         reply.header("set-cookie", [sessionCookie, clearCookie(OAUTH_STATE_COOKIE)])
         return reply.redirect(webUrl(returnTo))
       } catch (error) {

@@ -21,6 +21,10 @@ export interface AchievementContext {
   wins: number
   /** Another participant is an accepted friend. */
   playedWithFriend: boolean
+  /** Swerk (see SWERK_DISCORD_ID) is an accepted friend; never true for Swerk himself. */
+  friendOfSwerk: boolean
+  /** Swerk finished this game in the same lobby; never true for Swerk himself. */
+  playedWithSwerk: boolean
 }
 
 /** A win needs opponents, otherwise solo games would hand it out. */
@@ -52,6 +56,8 @@ const RULES: Record<AchievementId, (ctx: AchievementContext) => boolean> = {
   [AchievementId.Marathon]: (ctx) => ctx.roundCount >= MARATHON_ROUNDS,
   [AchievementId.WithFriends]: (ctx) => ctx.playedWithFriend,
   [AchievementId.TeamPlayer]: (ctx) => ctx.teamWon === true,
+  [AchievementId.SwerkFriend]: (ctx) => ctx.friendOfSwerk,
+  [AchievementId.SwerkGame]: (ctx) => ctx.playedWithSwerk,
 }
 
 /** Achievements this game unlocks, leaving out the ones already owned. */

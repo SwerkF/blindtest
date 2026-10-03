@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
-import { AchievementId, FriendshipStatus, GameMode, type LobbySettings, type RoundOutcome } from "@blindmusic/shared"
+import { AchievementId, achievementDef, FriendshipStatus, GameMode, type LobbySettings, type RoundOutcome } from "@blindmusic/shared"
 import { evaluateAchievements, isWin, type AchievementContext } from "@/account/achievements"
+import { SWERK_DISCORD_ID } from "@/account/config"
 import {
   FriendAction,
   FriendError,
@@ -43,6 +44,8 @@ function ctx(overrides: Partial<AchievementContext> = {}): AchievementContext {
     gamesPlayed: 2,
     wins: 0,
     playedWithFriend: false,
+    friendOfSwerk: false,
+    playedWithSwerk: false,
     ...overrides,
   }
 }
@@ -113,6 +116,20 @@ test("succès : score, marathon, amis et équipe", () => {
     ])
   )
   expect(evaluateAchievements(ctx({ teamWon: false }), [])).not.toContain(AchievementId.TeamPlayer)
+})
+
+test("succès secrets : Swerk, uniquement via le contexte et marqués secrets", () => {
+  const ids = evaluateAchievements(ctx(), [])
+  expect(ids).not.toContain(AchievementId.SwerkFriend)
+  expect(ids).not.toContain(AchievementId.SwerkGame)
+  expect(evaluateAchievements(ctx({ friendOfSwerk: true }), [])).toContain(AchievementId.SwerkFriend)
+  expect(evaluateAchievements(ctx({ playedWithSwerk: true }), [])).toContain(AchievementId.SwerkGame)
+  expect(evaluateAchievements(ctx({ playedWithSwerk: true }), [AchievementId.SwerkGame])).not.toContain(
+    AchievementId.SwerkGame
+  )
+  expect(achievementDef(AchievementId.SwerkFriend)?.secret).toBe(true)
+  expect(achievementDef(AchievementId.SwerkGame)?.secret).toBe(true)
+  expect(SWERK_DISCORD_ID).toBe(process.env.SWERK_DISCORD_ID?.trim() || "317411645129490435")
 })
 
 test("amis : demande, acceptation, refus et suppression", () => {

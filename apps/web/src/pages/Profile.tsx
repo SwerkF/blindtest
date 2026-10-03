@@ -8,6 +8,7 @@ import {
   Copy,
   Crown,
   DiscordLogo,
+  LockSimple,
   SignOut,
   Trophy,
   Users,
@@ -303,6 +304,20 @@ function AchievementsTab() {
       <ul className="grid sm:grid-cols-2 gap-2">
         {ACHIEVEMENTS.map((def) => {
           const at = unlocked.get(def.id)
+          if (def.secret && !at) {
+            return (
+              <li
+                key={def.id}
+                title="Succès secret"
+                className="flex items-center gap-3 border border-dashed border-edge rounded-xl px-3 py-2.5 bg-canvas/40 opacity-60"
+              >
+                <LockSimple size={26} weight="bold" className="shrink-0 text-muted" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">???</p>
+                </div>
+              </li>
+            )
+          }
           return (
             <li
               key={def.id}

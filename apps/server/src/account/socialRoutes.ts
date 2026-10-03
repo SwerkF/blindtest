@@ -22,6 +22,7 @@ import {
 } from "@/account/friendship"
 import { isOnline, notifyUser } from "@/account/presence"
 import { toPublicUser } from "@/account/users"
+import { syncSwerkFriendAchievement } from "@/account/swerk"
 import { isUserInRoom, rooms } from "@/game/engine"
 
 const HISTORY_LIMIT = 50
@@ -77,6 +78,8 @@ export default async function socialRoutes(fastify: FastifyInstance) {
   fastify.get("/me/achievements", async (req, reply): Promise<UnlockedAchievement[] | undefined> => {
     const user = await requireUser(req, reply)
     if (!user) return
+    // Retroactive « Ami de Swerk » for friendships older than the achievement
+    await syncSwerkFriendAchievement([user.id])
     const rows = await prisma.userAchievement.findMany({ where: { userId: user.id }, orderBy: { unlockedAt: "asc" } })
     return rows.map((r) => ({ id: r.achievementId as AchievementId, unlockedAt: r.unlockedAt.toISOString() }))
   })
@@ -151,6 +154,7 @@ export default async function socialRoutes(fastify: FastifyInstance) {
       case "update":
         await prisma.friendship.update({ where: { id: existing!.id }, data: { status: transition.row.status } })
         notifyUser(target.id, { type: "friend:accepted", from: me })
+        await syncSwerkFriendAchievement([user.id, target.id])
         return { outcome: FriendRequestOutcome.Accepted }
       case "delete":
         return reply.status(400).send({ error: "Action impossible" })
@@ -171,6 +175,7 @@ export default async function socialRoutes(fastify: FastifyInstance) {
     } else if (transition.kind === "update") {
       await prisma.friendship.update({ where: { id: row.id }, data: { status: transition.row.status } })
       notifyUser(targetId, { type: "friend:accepted", from: toPublicUser(user) })
+      await syncSwerkFriendAchievement([user.id, targetId])
     }
     return reply.status(204).send()
   }

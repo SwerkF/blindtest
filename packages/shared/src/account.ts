@@ -18,6 +18,8 @@ export enum AchievementId {
   Marathon = "marathon",
   WithFriends = "with_friends",
   TeamPlayer = "team_win",
+  SwerkFriend = "swerk_friend",
+  SwerkGame = "swerk_game",
 }
 
 export interface AchievementDef {
@@ -25,6 +27,8 @@ export interface AchievementDef {
   name: string
   description: string
   icon: string
+  /** Hidden in the list (« ??? ») until unlocked. */
+  secret?: boolean
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
@@ -53,6 +57,20 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: AchievementId.Marathon, name: "Marathonien", description: "Termine une partie d'au moins 30 titres", icon: "🏃" },
   { id: AchievementId.WithFriends, name: "Entre amis", description: "Joue une partie avec un ami", icon: "🤝" },
   { id: AchievementId.TeamPlayer, name: "Esprit d'équipe", description: "Gagne une partie en équipe", icon: "🛡️" },
+  {
+    id: AchievementId.SwerkFriend,
+    name: "Ami de Swerk",
+    description: "Compte Swerk parmi tes amis",
+    icon: "🫶",
+    secret: true,
+  },
+  {
+    id: AchievementId.SwerkGame,
+    name: "Partie avec Swerk",
+    description: "Termine une partie dans le même salon que Swerk",
+    icon: "🎤",
+    secret: true,
+  },
 ]
 
 export function achievementDef(id: string): AchievementDef | undefined {
