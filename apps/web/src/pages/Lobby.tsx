@@ -13,6 +13,9 @@ import {
   CircleNotch,
   LockSimple,
   SignOut,
+  Shuffle,
+  UsersThree,
+  Warning,
 } from "@phosphor-icons/react"
 import {
   ErrorCode,
@@ -22,6 +25,9 @@ import {
   MAX_ROUND_DURATION,
   MAX_TRACK_COUNT,
   TRACK_COUNT_STEP,
+  TEAMS,
+  TEAM_LABEL,
+  Team,
   parseDeezerPlaylistId,
   type DeezerPlaylistMeta,
   type LobbySettings,
@@ -34,6 +40,7 @@ import Avatar, { PlayerStatus } from "@/components/Avatar"
 import AvatarEditor from "@/components/AvatarEditor"
 import SettingsMenu from "@/components/SettingsMenu"
 import LegalFooter from "@/components/LegalFooter"
+import { TEAM_STYLE } from "@/utils/teams"
 
 const DEFAULT_SETTINGS: LobbySettings = {
   mode: GameMode.Classic,
@@ -46,6 +53,7 @@ const DEFAULT_SETTINGS: LobbySettings = {
   showLyrics: false,
   showHint: true,
   showArtistHint: true,
+  teamMode: false,
 }
 
 function normalizeSettings(settings: LobbySettings): LobbySettings {
@@ -276,6 +284,18 @@ export default function Lobby() {
     setPlayers((prev) => prev.map((p) => (p.id === session?.playerId ? { ...p, avatarSeed } : p)))
     send({ type: "player:avatar", avatarSeed })
   }
+
+  function joinTeam(team: Team) {
+    send({ type: "team:join", team })
+  }
+
+  function shuffleTeams() {
+    if (!isHostRef.current) return
+    send({ type: "team:shuffle" })
+  }
+
+  const teamMode = settings.teamMode === true
+  const emptyTeam = teamMode && players.length > 0 && TEAMS.some((team) => !players.some((p) => p.team === team))
 
   function handleStart() {
     if (!playlistCount() || preparing) return
@@ -523,7 +543,56 @@ export default function Lobby() {
             <div className="flex items-center gap-2 mb-4">
               <Users size={18} className="text-accent" />
               <h3 className="font-semibold text-ink">Joueurs ({players.length})</h3>
+              {teamMode && isHost && (
+                <button
+                  type="button"
+                  onClick={shuffleTeams}
+                  className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-accent px-2 py-1 rounded-lg transition-colors"
+                >
+                  <Shuffle size={14} weight="bold" />
+                  Équipes aléatoires
+                </button>
+              )}
             </div>
+            {teamMode ? (
+              <div className="flex flex-col gap-3">
+                {TEAMS.map((team) => {
+                  const members = players.filter((p) => p.team === team)
+                  const mine = players.find((p) => p.id === session.playerId)?.team === team
+                  return (
+                    <div key={team} className={`rounded-xl border p-3 ${TEAM_STYLE[team].border} ${TEAM_STYLE[team].soft}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${TEAM_STYLE[team].dot}`} />
+                        <span className={`text-sm font-bold ${TEAM_STYLE[team].text}`}>
+                          Équipe {TEAM_LABEL[team]} ({members.length})
+                        </span>
+                        {!mine && (
+                          <button
+                            type="button"
+                            onClick={() => joinTeam(team)}
+                            className={`ml-auto text-xs font-semibold px-2.5 py-1 rounded-lg text-white hover:opacity-90 transition-opacity ${TEAM_STYLE[team].bg}`}
+                          >
+                            Rejoindre
+                          </button>
+                        )}
+                      </div>
+                      <ul className="flex flex-col gap-2">
+                        {members.map((p) => (
+                          <PlayerRow
+                            key={p.id}
+                            player={p}
+                            isHost={p.id === hostId}
+                            isMe={p.id === session.playerId}
+                            onEdit={() => setEditingAvatar(true)}
+                          />
+                        ))}
+                        {members.length === 0 && <li className="text-muted text-xs">Personne pour l'instant</li>}
+                      </ul>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
             <ul className="flex flex-col gap-2">
               {players.map((p, i) => (
                 <li key={p.id} className={`flex items-center gap-3 ${p.connected ? "" : "opacity-60"}`}>
@@ -545,6 +614,7 @@ export default function Lobby() {
               ))}
               {players.length === 0 && <li className="text-muted text-sm">En attente de connexion...</li>}
             </ul>
+            )}
           </div>
 
           {/* Paramètres et lancement */}
@@ -639,6 +709,20 @@ export default function Lobby() {
                 </span>
               </label>
 
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={teamMode}
+                  disabled={!isHost}
+                  onChange={(e) => updateSetting("teamMode", e.target.checked)}
+                  className="w-4 h-4 accent-accent disabled:opacity-60"
+                />
+                <span className="text-xs text-muted font-medium uppercase tracking-wider transition-colors group-hover:text-ink flex items-center gap-1.5">
+                  <UsersThree size={14} weight="bold" />
+                  Mode équipe (Bleu contre Rouge)
+                </span>
+              </label>
+
               {/* Accès au salon */}
               <div className="pt-4 border-t border-edge flex flex-col gap-3">
                 <p className="text-xs text-muted font-medium uppercase tracking-wider flex items-center gap-1.5">
@@ -675,6 +759,12 @@ export default function Lobby() {
             </div>
           </div>
     {error && <p className="text-center text-red-500 text-sm">{error}</p>}
+    {emptyTeam && (
+      <p className="flex items-center justify-center gap-1.5 text-center text-amber-600 text-xs font-medium">
+        <Warning size={14} weight="bold" />
+        Une équipe est vide : la partie peut quand même démarrer.
+      </p>
+    )}
 
     {isHost ? (
       <button
@@ -711,6 +801,32 @@ export default function Lobby() {
         <LegalFooter className="mt-6" />
       </div>
     </div>
+  )
+}
+
+function PlayerRow({
+  player,
+  isHost,
+  isMe,
+  onEdit,
+}: {
+  player: PlayerPublic
+  isHost: boolean
+  isMe: boolean
+  onEdit: () => void
+}) {
+  return (
+    <li className={`flex items-center gap-3 ${player.connected ? "" : "opacity-60"}`}>
+      <Avatar
+        name={player.avatarSeed || player.name}
+        size={48}
+        status={player.connected ? PlayerStatus.Online : PlayerStatus.Offline}
+        onEdit={isMe ? onEdit : undefined}
+      />
+      <span className="font-medium text-ink">{player.name}</span>
+      {isHost && <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full ml-auto">Hôte</span>}
+      {isMe && !isHost && <span className="text-xs bg-edge text-muted px-2 py-0.5 rounded-full ml-auto">Vous</span>}
+    </li>
   )
 }
 

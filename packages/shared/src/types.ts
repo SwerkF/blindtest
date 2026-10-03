@@ -4,6 +4,45 @@ export enum GameMode {
   Anime = "anime",
 }
 
+/** Team mode: two sides whose score is the sum of their members' scores. */
+export enum Team {
+  Blue = "blue",
+  Red = "red",
+}
+
+export const TEAMS: readonly Team[] = [Team.Blue, Team.Red]
+
+export const TEAM_LABEL: Record<Team, string> = {
+  [Team.Blue]: "Bleu",
+  [Team.Red]: "Rouge",
+}
+
+export function isTeam(value: unknown): value is Team {
+  return value === Team.Blue || value === Team.Red
+}
+
+export type TeamScores = Record<Team, number>
+
+/**
+ * Team totals: members' current scores plus what players who left mid-game
+ * had banked for their side.
+ */
+export function teamTotals(
+  teams: Record<string, Team>,
+  scores: Record<string, number>,
+  banked?: Partial<TeamScores> | null
+): TeamScores {
+  const out: TeamScores = { [Team.Blue]: banked?.[Team.Blue] ?? 0, [Team.Red]: banked?.[Team.Red] ?? 0 }
+  for (const [id, team] of Object.entries(teams)) out[team] += scores[id] ?? 0
+  return out
+}
+
+/** The team ahead, or null on a draw. */
+export function winningTeam(totals: TeamScores): Team | null {
+  if (totals[Team.Blue] === totals[Team.Red]) return null
+  return totals[Team.Blue] > totals[Team.Red] ? Team.Blue : Team.Red
+}
+
 export enum ErrorCode {
   RoomNotFound = "room_not_found",
 }
@@ -75,6 +114,8 @@ export interface LobbySettings {
   showHint: boolean
   /** Reveal the first letters of the artist a bit earlier in the round. */
   showArtistHint: boolean
+  /** Bleu vs Rouge: team score is the sum of its members' scores. */
+  teamMode?: boolean
 }
 
 /** Human label for a theme slot: "Opening 2", "Ending", ... */
@@ -130,6 +171,8 @@ export interface PlayerPublic {
   /** Points earned in the current round, shown next to the total. */
   roundPoints: number
   connected: boolean
+  /** Always set; only shown when the lobby plays in team mode. */
+  team: Team
 }
 
 export interface RoundPublic {
@@ -162,6 +205,8 @@ export type WsServerMessage =
       settings: LobbySettings | null
       phase: GamePhase
       hostId: string
+      /** Points each team keeps from players who left during the game. */
+      teamBank: TeamScores
     }
   | { type: "game:start"; startsAt: number }
   /** The host hit start and tracks are being fetched (can take a few seconds). */
@@ -206,6 +251,9 @@ export type WsServerMessage =
       playerNames: Record<string, string>
       tracks: PlayedTrack[]
       outcomes: Record<string, RoundOutcome[]>
+      /** Team mode only: each player's side and the final team totals. */
+      teams?: Record<string, Team>
+      teamScores?: TeamScores
     }
   /** Who may join: sent to everyone, the password itself only to the host. */
   | { type: "lobby:access"; hasPassword: boolean; allowLateJoin: boolean; password?: string }
@@ -221,6 +269,10 @@ export type WsClientMessage =
   | { type: "typing"; typing: boolean }
   /** Host only: empty password removes it. */
   | { type: "lobby:access"; password: string; allowLateJoin: boolean }
+  /** Team mode: moves yourself to that team (lobby only). */
+  | { type: "team:join"; team: Team }
+  /** Host only: deals everyone into balanced random teams (lobby only). */
+  | { type: "team:shuffle" }
   /** Leaves the room for good, without the reconnection grace period. */
   | { type: "leave" }
 
