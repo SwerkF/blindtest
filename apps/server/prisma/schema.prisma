@@ -124,10 +124,15 @@ model CardPoolEntry {
   id              String   @id @default(cuid())
   isrc            String   @unique
   recordingMbid   String?
-  deezerTrackId   BigInt   @unique
+  /// Null until the track is resolved on Deezer, lazily, when a pack containing it is opened.
+  deezerTrackId   BigInt?  @unique
   title           String
   artistName      String
   deezerMd5Image  String?
+  /// When deezerTrackId / deezerMd5Image were resolved on Deezer.
+  resolvedAt      DateTime?
+  /// Deezer has no readable preview for this ISRC: never drawn again.
+  unplayable      Boolean  @default(false)
   /// Matches a CardRarity; only used to draw. Owned vinyls keep UserCard.rarityAtObtain.
   rarity          String
   popularityScore Float
@@ -141,7 +146,7 @@ model CardPoolEntry {
 
   cards UserCard[]
 
-  @@index([available, rarity])
+  @@index([available, unplayable, rarity])
 }
 
 /// A pack earned by a player; it stays in the table once opened (openedAt) so the

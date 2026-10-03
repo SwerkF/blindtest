@@ -15,6 +15,40 @@ export class Throttle {
   }
 }
 
+export interface FetchRetryOptions {
+  /** Spaces the attempts; shared between callers so a burst stays under the API quota. */
+  throttle?: Throttle
+  /** Per attempt; a timeout counts as a network error. */
+  timeoutMs?: number
+  /** Extra attempts after the first one, on network errors and 429/5xx answers. */
+  retries?: number
+  /** Wait before the first retry, doubled each time. */
+  backoffMs?: number
+  fetch?: typeof fetch
+}
+
+/**
+ * fetch with a throttle, a timeout and retries. A network error is thrown once the attempts
+ * are spent; any other answer (404 and 4xx included) is returned for the caller to read.
+ */
+export async function fetchRetry(url: string, options: FetchRetryOptions = {}): Promise<Response> {
+  const { throttle, timeoutMs, retries = 0, backoffMs = 2000 } = options
+  for (let attempt = 0; ; attempt++) {
+    await throttle?.wait()
+    const last = attempt >= retries
+    let response: Response
+    try {
+      response = await (options.fetch ?? fetch)(url, timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : undefined)
+    } catch (error) {
+      if (last) throw error
+      await sleep(backoffMs * 2 ** attempt)
+      continue
+    }
+    if (response.status === 404 || response.ok || last || (response.status < 500 && response.status !== 429)) return response
+    await sleep(backoffMs * 2 ** attempt)
+  }
+}
+
 /** Cached lookups survive a crash so a run resumes where it stopped; they expire so each run refreshes. */
 export const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 

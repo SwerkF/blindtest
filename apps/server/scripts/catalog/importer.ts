@@ -37,7 +37,8 @@ export async function importEntries(
     select: { id: true, isrc: true, deezerTrackId: true, available: true },
   })
   const byIsrc = new Map(existing.map((e) => [e.isrc, e]))
-  const byTrack = new Map(existing.map((e) => [Number(e.deezerTrackId), e]))
+  // Entries imported without Deezer (catalog:import-all) have no track yet
+  const byTrack = new Map(existing.flatMap((e) => (e.deezerTrackId === null ? [] : [[Number(e.deezerTrackId), e] as const])))
   const availableBefore = existing.filter((e) => e.available).length
   if (!options.force && availableBefore > 0 && entries.length < availableBefore * MIN_CATALOG_RATIO) {
     throw new Error(
@@ -49,6 +50,7 @@ export async function importEntries(
   const touched = new Set<string>()
   const claimedIsrc = new Set<string>()
   const claimedTrack = new Set<number>()
+  const resolvedAt = new Date()
   const operations: (() => ReturnType<PrismaClient["cardPoolEntry"]["create"]>)[] = []
 
   for (const entry of entries) {
@@ -59,6 +61,9 @@ export async function importEntries(
       title: entry.title,
       artistName: entry.artistName,
       deezerMd5Image: entry.deezerMd5Image,
+      // Validated on Deezer by catalog:build
+      resolvedAt,
+      unplayable: false,
       rarity: entry.rarity,
       popularityScore: entry.popularityScore,
       pools: JSON.stringify(entry.pools),

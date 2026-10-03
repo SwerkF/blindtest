@@ -1,3 +1,4 @@
+import type { PrismaClient } from "@prisma/client"
 import {
   CARD_RARITIES,
   COLLECTION_PAGE_SIZE,
@@ -7,6 +8,27 @@ import {
 } from "@blindmusic/shared"
 import { prisma } from "@/db"
 import { toCardDto } from "@/booster/open"
+
+export const TOTALS_TTL_MS = 10 * 60 * 1000
+let totalsCache: { at: number; totals: Map<string, number> } | null = null
+
+/** Drawable entries per rarity. Counting a million rows takes a moment, so the answer is kept 10 minutes. */
+export async function catalogTotals(client: PrismaClient = prisma, now = Date.now()): Promise<Map<string, number>> {
+  if (totalsCache && now - totalsCache.at < TOTALS_TTL_MS) return totalsCache.totals
+  const rows = await client.cardPoolEntry.groupBy({
+    by: ["rarity"],
+    where: { available: true, unplayable: false },
+    _count: { _all: true },
+  })
+  const totals = new Map(rows.map((r) => [r.rarity, r._count._all]))
+  // An empty catalogue is not kept: the import may land right after
+  if (totals.size > 0) totalsCache = { at: now, totals }
+  return totals
+}
+
+export function clearCatalogTotals() {
+  totalsCache = null
+}
 
 /**
  * One page of a player's collection, most recent first. Filters and counters use
@@ -29,14 +51,14 @@ export async function loadCollection(
     }),
     prisma.userCard.count({ where }),
     prisma.userCard.groupBy({ by: ["rarityAtObtain"], where: { userId }, _count: { _all: true } }),
-    prisma.cardPoolEntry.groupBy({ by: ["rarity"], where: { available: true }, _count: { _all: true } }),
+    catalogTotals(),
     prisma.userCard.aggregate({ where: { userId }, _sum: { count: true } }),
   ])
 
   const summary: RaritySummary[] = CARD_RARITIES.map((r) => ({
     rarity: r,
     owned: owned.find((o) => o.rarityAtObtain === r)?._count._all ?? 0,
-    total: totals.find((t) => t.rarity === r)?._count._all ?? 0,
+    total: totals.get(r) ?? 0,
   }))
   return {
     items: rows.map((row) => toCardDto(row.entry, row)),

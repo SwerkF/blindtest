@@ -12,7 +12,7 @@ import {
 import { prisma } from "@/db"
 import { requireUser } from "@/account/authRoutes"
 import { BoosterError, openPack } from "@/booster/open"
-import { loadCollection } from "@/booster/collection"
+import { catalogTotals, loadCollection } from "@/booster/collection"
 
 const MAX_PAGE = 10_000
 const FLAG_LIMIT_PER_MINUTE = 30
@@ -40,14 +40,14 @@ export default async function boosterRoutes(fastify: FastifyInstance) {
   fastify.get("/me/boosters", async (req, reply): Promise<BoosterStateResponse | undefined> => {
     const user = await requireUser(req, reply)
     if (!user) return
-    const [grouped, fresh, available] = await Promise.all([
+    const [grouped, fresh, totals] = await Promise.all([
       prisma.userPack.groupBy({
         by: ["rarity"],
         where: { userId: user.id, openedAt: null },
         _count: { _all: true },
       }),
       prisma.user.findUnique({ where: { id: user.id }, select: { packsSincePity: true } }),
-      prisma.cardPoolEntry.count({ where: { available: true } }),
+      catalogTotals(),
     ])
     reply.header("Cache-Control", "private, no-store")
     return {
@@ -57,7 +57,7 @@ export default async function boosterRoutes(fastify: FastifyInstance) {
       })),
       packsSincePity: fresh?.packsSincePity ?? 0,
       pityThreshold: PITY_THRESHOLD,
-      catalogReady: available > 0,
+      catalogReady: totals.size > 0,
     }
   })
 
