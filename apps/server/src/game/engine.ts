@@ -400,6 +400,8 @@ export function removePlayer(code: string, playerId: string) {
     } catch {}
   }
   broadcast(room, lobbyUpdate(room))
+  // The one player still searching may be the one who left
+  endRoundIfAllFound(room)
 }
 
 /** Lets a reconnecting client resume mid-round instead of waiting for the next one. */
@@ -739,13 +741,22 @@ export function restartToLobby(code: string) {
   broadcastLobby(code)
 }
 
-/** Ends the round as soon as every connected player has the artist and the title. */
+/**
+ * True once the player has nothing left to find this round: the artist and the title
+ * (the anime and its singer in anime mode), plus the year or all their year tries.
+ */
+function isDoneWithRound(room: Room, player: PlayerState): boolean {
+  // Anime mode: the anime alone sets hasFoundBoth, the round waits for the singer bonus too
+  const answered = player.hasFoundBoth && (!isAnimeMode(room) || player.hasFoundArtist)
+  return answered && (player.hasFoundYear || player.yearGuessesLeft <= 0)
+}
+
+/** Ends the round as soon as every connected player is done with it. */
 function endRoundIfAllFound(room: Room) {
+  if (room.phase !== GamePhase.Playing) return
   const active = [...room.players.values()].filter((p) => p.connected)
   if (active.length === 0) return
-  // Anime mode: the anime alone sets hasFoundBoth, the round waits for the singer bonus too
-  const done = (p: PlayerState) => p.hasFoundBoth && (!isAnimeMode(room) || p.hasFoundArtist)
-  if (active.every(done)) endRound(room)
+  if (active.every((p) => isDoneWithRound(room, p))) endRound(room)
 }
 
 export interface GuessResult {
@@ -771,8 +782,12 @@ const YEAR_POINTS = 2
  */
 export function processGuess(code: string, playerId: string, text: string): GuessResult | null {
   const result = evaluateGuess(code, playerId, text)
-  const player = rooms.get(code)?.players.get(playerId)
-  if (result && player) player.roundPoints += result.pointsEarned
+  const room = rooms.get(code)
+  const player = room?.players.get(playerId)
+  if (!result || !room || !player) return result
+  player.roundPoints += result.pointsEarned
+  // After any guess, year attempts included: the last player to finish ends the round early
+  endRoundIfAllFound(room)
   return result
 }
 
@@ -855,8 +870,6 @@ function evaluateGuess(code: string, playerId: string, text: string): GuessResul
     revealedArtist: firstBoth ? track.artist : undefined,
     revealedTitle: firstBoth ? track.title : undefined,
   }
-
-  endRoundIfAllFound(room)
   return result
 }
 
@@ -966,7 +979,6 @@ function guessAnime(room: Room, player: PlayerState, track: Track, raw: string):
     revealedAnime: animeMatch ? anime.reveal.name : undefined,
     revealedArtist: artistMatch ? track.artist : undefined,
   }
-  endRoundIfAllFound(room)
   return result
 }
 

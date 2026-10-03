@@ -1,11 +1,11 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
 import { Check, PaperPlaneTilt, UsersThree } from "@phosphor-icons/react"
 import { useAuth } from "@/hooks/useAuth"
 import { useFriends } from "@/hooks/useFriends"
 import { accountApi } from "@/utils/accountApi"
 import Modal from "@/components/Modal"
 import UserChip from "@/components/UserChip"
+import { ProfileTab, openProfile } from "@/utils/profileDrawer"
 
 /** Lobby button for logged-in players: pings online friends with the invite code. */
 export default function InviteFriendsButton({ code }: { code: string }) {
@@ -49,9 +49,16 @@ function InviteFriendsModal({ code, onClose }: { code: string; onClose: () => vo
       ) : data.friends.length === 0 ? (
         <p className="text-muted">
           Tu n'as pas encore d'amis.{" "}
-          <Link to="/profil?onglet=amis" className="text-accent hover:underline">
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              openProfile(ProfileTab.Friends)
+            }}
+            className="text-accent hover:underline"
+          >
             Ajoute-en depuis ton profil
-          </Link>
+          </button>
           .
         </p>
       ) : (

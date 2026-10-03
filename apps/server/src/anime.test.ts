@@ -217,13 +217,17 @@ test("mode anime : l'auteur est un bonus, seul ou avec l'anime", async () => {
   r.cleanup()
 })
 
-test("mode anime : la manche finit quand tout le monde a l'anime et l'auteur", async () => {
+test("mode anime : la manche finit quand tout le monde a l'anime, l'auteur et l'annee", async () => {
   const r = await animeRoom("A3", ["a"])
 
   processGuess("A3", "a", "Demon Slayer")
   expect(r.inbox.some((m) => m.type === "round:reveal")).toBe(false)
 
   processGuess("A3", "a", "LiSA")
+  // L'annee reste jouable une fois l'anime et l'auteur trouves
+  expect(r.inbox.some((m) => m.type === "round:reveal")).toBe(false)
+
+  expect(processGuess("A3", "a", "2019")?.matched).toBe(GuessMatch.Year)
   const reveal = r.inbox.find((m) => m.type === "round:reveal")
   expect(reveal?.type === "round:reveal" && reveal.anime?.name).toBe("Kimetsu no Yaiba")
 
@@ -244,6 +248,7 @@ test("chargement progressif : la partie attend le titre suivant puis se termine"
   expect(first?.type === "round:start" && first.round.total).toBe(2)
 
   processGuess("A4", "a", "Demon Slayer LiSA")
+  processGuess("A4", "a", "2019")
   await Bun.sleep(5100)
   // Revelation finie mais rien de charge : on attend sans terminer
   expect(inbox.some((m) => m.type === "game:end")).toBe(false)

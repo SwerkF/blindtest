@@ -9,7 +9,7 @@ import {
   Info,
   ClockCounterClockwise,
 } from "@phosphor-icons/react"
-import { ApiError, api, loadSession, saveSession } from "@/utils/api"
+import { ApiError, api, clearSession, loadSession, saveSession } from "@/utils/api"
 import { loadHistory, type GameHistoryEntry } from "@/utils/storage"
 import { GamePhase, TEAM_LABEL } from "@blindmusic/shared"
 import { TEAM_RESULT_LABEL, TEAM_STYLE } from "@/utils/teams"
@@ -21,6 +21,13 @@ import LegalFooter from "@/components/LegalFooter"
 import Modal from "@/components/Modal"
 import DiscordLoginButton from "@/components/DiscordLoginButton"
 import { useAuth } from "@/hooks/useAuth"
+
+/** Router state other pages hand to the home page. */
+export interface HomeNavState {
+  notice?: string
+  /** Room the player was in when they accepted an invite to another one. */
+  fromRoom?: { code: string; path: string }
+}
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -51,11 +58,28 @@ export default function Home() {
   const [inviteInfo, setInviteInfo] = useState<string | null>(null)
   const [password, setPassword] = useState("")
   const [needsPassword, setNeedsPassword] = useState(false)
+  const navState = useLocation().state as HomeNavState | null
   // Set when bounced here from a room that no longer exists, or after leaving one
-  const notice = (useLocation().state as { notice?: string } | null)?.notice
+  const notice = navState?.notice
+  // Set when a friend's invite was accepted from inside another room
+  const fromRoom =
+    invitedCode && navState?.fromRoom?.code !== invitedCode.toUpperCase() ? navState?.fromRoom : undefined
+
+  // "/" and "/join/:code" share this page instance: an invite accepted while it is already
+  // mounted (toast on the home page, another invite) only changes the param, so reset the form
+  const [syncedInvite, setSyncedInvite] = useState(invitedCode)
+  if (invitedCode !== syncedInvite) {
+    setSyncedInvite(invitedCode)
+    setCode((invitedCode ?? "").toUpperCase())
+    setInviteInfo(null)
+    setNeedsPassword(false)
+    setPassword("")
+    setError("")
+  }
 
   useEffect(() => {
     if (!invitedCode) return
+    let cancelled = false
     const upper = invitedCode.toUpperCase()
     // Already in this room in this tab: skip straight back to it
     if (loadSession(upper)) {
@@ -65,6 +89,7 @@ export default function Home() {
     api
       .lobbyInfo(upper)
       .then((info) => {
+        if (cancelled) return
         setNeedsPassword(info.hasPassword)
         const inGame = info.phase !== GamePhase.Lobby && info.phase !== GamePhase.End
         setInviteInfo(
@@ -76,6 +101,7 @@ export default function Home() {
         )
       })
       .catch((caught: unknown) => {
+        if (cancelled) return
         if (caught instanceof ApiError && caught.status === 404) {
           // Same page instance on "/": drop the dead code along with the invite
           setCode("")
@@ -84,6 +110,9 @@ export default function Home() {
         }
         setError(errorMessage(caught))
       })
+    return () => {
+      cancelled = true
+    }
   }, [invitedCode, navigate])
 
   async function handleCreate() {
@@ -114,6 +143,8 @@ export default function Home() {
         password || undefined
       )
       saveSession(res.code, res.playerId, res.playerName)
+      // The previous room dropped us when its page closed; forget it so it is not resumed
+      if (fromRoom && fromRoom.code !== res.code) clearSession(fromRoom.code)
       navigate(`/lobby/${res.code}`)
     } catch (error) {
       if (error instanceof ApiError && error.needsPassword) setNeedsPassword(true)
@@ -186,6 +217,21 @@ export default function Home() {
               Invitation au salon <span className="font-mono font-bold text-ink">{code}</span>
               {inviteInfo ? ` · ${inviteInfo}` : ""}
             </p>
+          )}
+          {fromRoom && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm bg-canvas border border-edge rounded-xl px-4 py-3 text-ink">
+              <span>
+                Tu es encore dans le salon <span className="font-mono font-bold">{fromRoom.code}</span> : rejoindre
+                celui-ci t'en fera sortir.
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate(fromRoom.path, { replace: true })}
+                className="text-accent font-semibold hover:underline"
+              >
+                Y retourner
+              </button>
+            </div>
           )}
 
           {!invitedCode && (

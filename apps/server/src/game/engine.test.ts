@@ -55,14 +55,14 @@ const SETTINGS: LobbySettings = {
   showArtistHint: false,
 }
 
-async function room(code: string, players: string[]) {
+async function room(code: string, players: string[], settings: LobbySettings = SETTINGS) {
   const inbox: WsServerMessage[] = []
   const collect = (msg: WsServerMessage) => inbox.push(msg)
 
   createRoom(code, players[0], players[0], players[0], collect)
   for (const p of players.slice(1)) addPlayer(code, p, p, p, collect)
   // No countdown in tests; the round still starts on a timer tick
-  await startGame(code, SETTINGS, [TRACK], { countdownMs: 0 })
+  await startGame(code, settings, [TRACK], { countdownMs: 0 })
   await Bun.sleep(5)
   return {
     inbox,
@@ -186,15 +186,88 @@ test("l'hote est transfere quand il quitte la salle", async () => {
 
 test("la manche se termine des que tous les joueurs connectes ont tout trouve", async () => {
   const r = await room("T7", ["a", "b"])
-  registerSocket("T7", "a", () => {})
+  registerSocket("T7", "a", (msg) => r.inbox.push(msg))
   registerSocket("T7", "b", () => {})
 
   processGuess("T7", "a", "Céline Dion Sous le vent")
   // b n'a pas encore repondu, la manche doit rester ouverte
   expect(processGuess("T7", "b", "Céline Dion Sous le vent")?.pointsEarned).toBe(18)
 
+  // Artiste et titre trouves partout, mais l'annee reste a jouer
+  expect(processGuess("T7", "a", "2001")?.matched).toBe(GuessMatch.Year)
+  expect(processGuess("T7", "b", "1990")?.matched).toBe(GuessMatch.YearWrong)
+  // b epuise son dernier essai : plus personne n'a rien a trouver
+  expect(processGuess("T7", "b", "1991")?.yearGuessesLeft).toBe(0)
+
   // Manche terminee : les guess suivants sont rejetes
   expect(processGuess("T7", "a", "Céline Dion")).toBeNull()
+  expect(r.last("round:reveal")?.outcomes.a?.[0]).toEqual({ artist: true, title: true, year: true })
+
+  r.cleanup()
+})
+
+test("apres l'artiste et le titre, on peut encore proposer l'annee", async () => {
+  const r = await room("Y1", ["a"])
+  registerSocket("Y1", "a", (msg) => r.inbox.push(msg))
+
+  expect(processGuess("Y1", "a", "Céline Dion Sous le vent")?.pointsEarned).toBe(20)
+  // Seul joueur, paire trouvee : la manche attend encore l'annee
+  expect(r.last("round:reveal")).toBeUndefined()
+
+  const wrong = processGuess("Y1", "a", "1999")
+  expect(wrong?.matched).toBe(GuessMatch.YearWrong)
+  expect(r.last("round:reveal")).toBeUndefined()
+
+  const right = processGuess("Y1", "a", "2001")
+  expect(right?.matched).toBe(GuessMatch.Year)
+  expect(right?.pointsEarned).toBe(2)
+  expect(rooms.get("Y1")!.players.get("a")!.score).toBe(22)
+  expect(r.last("round:reveal")?.scores.a).toBe(22)
+
+  r.cleanup()
+})
+
+test("la manche se termine quand l'annee est trouvee avant la paire, ou les essais epuises", async () => {
+  const r = await room("Y2", ["a"])
+  registerSocket("Y2", "a", (msg) => r.inbox.push(msg))
+
+  processGuess("Y2", "a", "1980")
+  processGuess("Y2", "a", "1981")
+  // Essais epuises mais artiste et titre encore a trouver
+  expect(r.last("round:reveal")).toBeUndefined()
+  processGuess("Y2", "a", "Céline Dion")
+  expect(r.last("round:reveal")).toBeUndefined()
+
+  processGuess("Y2", "a", "Sous le vent")
+  expect(r.last("round:reveal")?.outcomes.a?.[0]).toEqual({ artist: true, title: true, year: false })
+
+  r.cleanup()
+})
+
+test("sans essai d'annee, trouver la paire suffit a finir la manche", async () => {
+  const r = await room("Y3", ["a"], { ...SETTINGS, yearGuessAttempts: 0 })
+  registerSocket("Y3", "a", (msg) => r.inbox.push(msg))
+
+  processGuess("Y3", "a", "Céline Dion Sous le vent")
+  expect(r.last("round:reveal")).toBeDefined()
+
+  r.cleanup()
+})
+
+test("un joueur deconnecte ne retient pas la manche, et le dernier qui part la termine", async () => {
+  const r = await room("Y4", ["a", "b", "c"])
+  registerSocket("Y4", "a", (msg) => r.inbox.push(msg))
+  registerSocket("Y4", "b", () => {})
+  // c n'a jamais ouvert de socket : il ne compte pas
+
+  processGuess("Y4", "a", "Céline Dion Sous le vent 2001")
+  // "... 2001" n'est pas une annee seule : a doit encore la proposer
+  processGuess("Y4", "a", "2001")
+  expect(r.last("round:reveal")).toBeUndefined()
+
+  // b quitte sans avoir fini : il ne reste que des joueurs qui ont tout trouve
+  removePlayer("Y4", "b")
+  expect(r.last("round:reveal")).toBeDefined()
 
   r.cleanup()
 })

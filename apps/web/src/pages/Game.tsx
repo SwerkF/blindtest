@@ -573,6 +573,12 @@ export default function Game() {
 
   const me = players.find((p) => p.id === session?.playerId)
   const isAnime = settings?.mode === GameMode.Anime
+  // Artist and title (anime and singer) found: the input stays open for the year bonus
+  const onlyYearLeft =
+    !!me &&
+    (isAnime ? me.hasFoundTitle && me.hasFoundArtist : me.hasFoundBoth) &&
+    !me.hasFoundYear &&
+    yearGuessesLeft > 0
   const myOutcomes = session ? (outcomes[session.playerId] ?? []) : []
   const totalRounds = endState?.tracks.length ?? round?.total ?? 0
 
@@ -1130,7 +1136,13 @@ export default function Game() {
                     signalTyping(e.target.value)
                   }}
                   onKeyDown={(e) => e.key === "Enter" && submitGuess()}
-                  placeholder={isAnime ? "Nom de l'animé, auteur ou année…" : "Artiste, titre ou année…"}
+                  placeholder={
+                    onlyYearLeft
+                      ? "Et l'année ? (4 chiffres)"
+                      : isAnime
+                        ? "Nom de l'animé, auteur ou année…"
+                        : "Artiste, titre ou année…"
+                  }
                   disabled={!canGuess}
                   enterKeyHint="send"
                   autoComplete="off"

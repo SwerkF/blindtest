@@ -22,12 +22,7 @@ import SettingsMenu from "@/components/SettingsMenu"
 import FriendsPanel from "@/components/FriendsPanel"
 import LegalFooter from "@/components/LegalFooter"
 import Modal from "@/components/Modal"
-
-enum ProfileTab {
-  History = "historique",
-  Achievements = "succes",
-  Friends = "amis",
-}
+import { ProfileTab, readProfileTab } from "@/utils/profileDrawer"
 
 const TABS = [
   { id: ProfileTab.History, label: "Historique", icon: ClockCounterClockwise },
@@ -35,19 +30,48 @@ const TABS = [
   { id: ProfileTab.Friends, label: "Amis", icon: Users },
 ]
 
-function readTab(value: string | null): ProfileTab {
-  return Object.values(ProfileTab).find((tab) => tab === value) ?? ProfileTab.History
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
 }
 
+/** Standalone /profil page (home page link, Discord login return). */
 export default function Profile() {
+  const [params, setParams] = useSearchParams()
+  return (
+    <div className="min-h-screen bg-canvas px-4 py-6 sm:py-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm text-muted hover:text-accent transition-colors"
+          >
+            <ArrowLeft size={16} weight="bold" />
+            Accueil
+          </Link>
+          <SettingsMenu />
+        </div>
+        <ProfileContent
+          tab={readProfileTab(params.get("onglet"))}
+          onTabChange={(tab) => setParams({ onglet: tab }, { replace: true })}
+          loginRedirect="/profil"
+        />
+        <LegalFooter className="mt-8" />
+      </div>
+    </div>
+  )
+}
+
+interface ProfileContentProps {
+  tab: ProfileTab
+  onTabChange: (tab: ProfileTab) => void
+  /** Where the Discord login sends the player back to. */
+  loginRedirect: string
+}
+
+/** Profile card, Historique / Succès / Amis tabs and account deletion: shared by the page and the drawer. */
+export function ProfileContent({ tab, onTabChange, loginRedirect }: ProfileContentProps) {
   const { user, discordEnabled, loading, logout, deleteAccount } = useAuth()
   const { profile } = useProfile()
-  const [params, setParams] = useSearchParams()
-  const tab = readTab(params.get("onglet"))
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState("")
@@ -71,144 +95,132 @@ export default function Profile() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas px-4 py-6 sm:py-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted hover:text-accent transition-colors">
-            <ArrowLeft size={16} weight="bold" />
-            Accueil
-          </Link>
-          <SettingsMenu />
+    <>
+      {loading ? (
+        <p className="text-muted text-sm">Chargement…</p>
+      ) : !user ? (
+        <div className="bg-surface border border-edge rounded-3xl p-8 text-center flex flex-col items-center gap-4">
+          <Avatar name={profile.avatarSeed} size={96} animate="always" />
+          <h1 className="text-2xl font-black text-ink">Mon profil</h1>
+          <p className="text-sm text-muted max-w-sm">
+            Connecte-toi avec Discord pour garder ton historique de parties, débloquer des succès et jouer avec tes
+            amis. Tu peux aussi continuer à jouer sans compte.
+          </p>
+          {discordEnabled ? (
+            <a
+              href={discordLoginUrl(loginRedirect)}
+              className="inline-flex items-center gap-2 bg-[#5865F2] text-white text-sm font-semibold px-5 py-3 rounded-xl hover:opacity-90 transition-opacity"
+            >
+              <DiscordLogo size={18} weight="fill" />
+              Se connecter avec Discord
+            </a>
+          ) : (
+            <p className="text-xs text-muted">La connexion n'est pas disponible sur ce serveur.</p>
+          )}
         </div>
-
-        {loading ? (
-          <p className="text-muted text-sm">Chargement…</p>
-        ) : !user ? (
-          <div className="bg-surface border border-edge rounded-3xl p-8 text-center flex flex-col items-center gap-4">
-            <Avatar name={profile.avatarSeed} size={96} animate="always" />
-            <h1 className="text-2xl font-black text-ink">Mon profil</h1>
-            <p className="text-sm text-muted max-w-sm">
-              Connecte-toi avec Discord pour garder ton historique de parties, débloquer des succès et jouer avec tes
-              amis. Tu peux aussi continuer à jouer sans compte.
-            </p>
-            {discordEnabled ? (
-              <a
-                href={discordLoginUrl("/profil")}
-                className="inline-flex items-center gap-2 bg-[#5865F2] text-white text-sm font-semibold px-5 py-3 rounded-xl hover:opacity-90 transition-opacity"
+      ) : (
+        <>
+          <div className="bg-surface border border-edge rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-5">
+            <Avatar
+              name={user.avatarSeed || profile.avatarSeed}
+              size={96}
+              animate="always"
+              imageUrl={user.useDiscordAvatar ? user.discordAvatarUrl : null}
+            />
+            <div className="flex-1 min-w-0 text-center sm:text-left">
+              <h1 className="text-2xl font-black text-ink truncate">{user.pseudo}</h1>
+              <p className="text-sm text-muted flex items-center justify-center sm:justify-start gap-1.5 mt-0.5">
+                <img src={user.discordAvatarUrl} alt="" className="w-4 h-4 rounded-full" />@{user.username}
+              </p>
+              <button
+                type="button"
+                onClick={() => void copyCode(user.friendCode)}
+                title="Copier mon code ami"
+                className="mt-3 inline-flex items-center gap-2 text-xs text-muted bg-canvas border border-edge rounded-lg px-2.5 py-1.5 hover:border-accent transition-colors"
               >
-                <DiscordLogo size={18} weight="fill" />
-                Se connecter avec Discord
-              </a>
-            ) : (
-              <p className="text-xs text-muted">La connexion n'est pas disponible sur ce serveur.</p>
-            )}
+                Code ami <span className="font-mono font-bold text-ink tracking-widest">{user.friendCode}</span>
+                {copied ? <Check size={12} weight="bold" className="text-green-600" /> : <Copy size={12} />}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="inline-flex items-center gap-2 text-sm text-muted hover:text-red-500 px-3 py-2 rounded-xl transition-colors"
+            >
+              <SignOut size={16} weight="bold" />
+              Se déconnecter
+            </button>
           </div>
-        ) : (
-          <>
-            <div className="bg-surface border border-edge rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-5">
-              <Avatar
-                name={user.avatarSeed || profile.avatarSeed}
-                size={96}
-                animate="always"
-                imageUrl={user.useDiscordAvatar ? user.discordAvatarUrl : null}
-              />
-              <div className="flex-1 min-w-0 text-center sm:text-left">
-                <h1 className="text-2xl font-black text-ink truncate">{user.pseudo}</h1>
-                <p className="text-sm text-muted flex items-center justify-center sm:justify-start gap-1.5 mt-0.5">
-                  <img src={user.discordAvatarUrl} alt="" className="w-4 h-4 rounded-full" />@{user.username}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void copyCode(user.friendCode)}
-                  title="Copier mon code ami"
-                  className="mt-3 inline-flex items-center gap-2 text-xs text-muted bg-canvas border border-edge rounded-lg px-2.5 py-1.5 hover:border-accent transition-colors"
-                >
-                  Code ami <span className="font-mono font-bold text-ink tracking-widest">{user.friendCode}</span>
-                  {copied ? <Check size={12} weight="bold" className="text-green-600" /> : <Copy size={12} />}
-                </button>
-              </div>
+
+          <DiscordAvatarToggle className="mt-4" />
+
+          <div role="tablist" className="mt-6 flex gap-1 bg-surface border border-edge rounded-2xl p-1">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => onTabChange(id)}
+                className={`flex-1 inline-flex items-center justify-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl transition-colors ${
+                  tab === id ? "bg-accent text-white" : "text-muted hover:text-ink"
+                }`}
+              >
+                <Icon size={16} weight="bold" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 bg-surface border border-edge rounded-3xl p-4 sm:p-6">
+            {tab === ProfileTab.History && <HistoryTab />}
+            {tab === ProfileTab.Achievements && <AchievementsTab />}
+            {tab === ProfileTab.Friends && <FriendsPanel />}
+          </div>
+
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="text-xs text-muted hover:text-red-500 transition-colors"
+            >
+              Supprimer mon compte
+            </button>
+          </div>
+        </>
+      )}
+
+      {confirmDelete && (
+        <Modal
+          title="Supprimer mon compte ?"
+          onClose={() => setConfirmDelete(false)}
+          actions={
+            <>
               <button
                 type="button"
-                onClick={() => void logout()}
-                className="inline-flex items-center gap-2 text-sm text-muted hover:text-red-500 px-3 py-2 rounded-xl transition-colors"
+                onClick={() => setConfirmDelete(false)}
+                className="text-sm text-muted hover:text-ink px-4 py-2 rounded-xl transition-colors"
               >
-                <SignOut size={16} weight="bold" />
-                Se déconnecter
+                Annuler
               </button>
-            </div>
-
-            <DiscordAvatarToggle className="mt-4" />
-
-            <div role="tablist" className="mt-6 flex gap-1 bg-surface border border-edge rounded-2xl p-1">
-              {TABS.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === id}
-                  onClick={() => setParams({ onglet: id }, { replace: true })}
-                  className={`flex-1 inline-flex items-center justify-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl transition-colors ${
-                    tab === id ? "bg-accent text-white" : "text-muted hover:text-ink"
-                  }`}
-                >
-                  <Icon size={16} weight="bold" />
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-4 bg-surface border border-edge rounded-3xl p-4 sm:p-6">
-              {tab === ProfileTab.History && <HistoryTab />}
-              {tab === ProfileTab.Achievements && <AchievementsTab />}
-              {tab === ProfileTab.Friends && <FriendsPanel />}
-            </div>
-
-            <div className="mt-4 text-center">
               <button
                 type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="text-xs text-muted hover:text-red-500 transition-colors"
+                onClick={() => void handleDelete()}
+                className="text-sm font-semibold text-white bg-red-500 px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
               >
-                Supprimer mon compte
+                Supprimer
               </button>
-            </div>
-          </>
-        )}
-
-        <LegalFooter className="mt-8" />
-
-        {confirmDelete && (
-          <Modal
-            title="Supprimer mon compte ?"
-            onClose={() => setConfirmDelete(false)}
-            actions={
-              <>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="text-sm text-muted hover:text-ink px-4 py-2 rounded-xl transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDelete()}
-                  className="text-sm font-semibold text-white bg-red-500 px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
-                >
-                  Supprimer
-                </button>
-              </>
-            }
-          >
-            <p>
-              Ton historique, tes succès et tes amis seront effacés définitivement. Tu pourras toujours jouer sans
-              compte, avec ton pseudo.
-            </p>
-            {deleteError && <p className="mt-3 text-red-500">{deleteError}</p>}
-          </Modal>
-        )}
-      </div>
-    </div>
+            </>
+          }
+        >
+          <p>
+            Ton historique, tes succès et tes amis seront effacés définitivement. Tu pourras toujours jouer sans compte,
+            avec ton pseudo.
+          </p>
+          {deleteError && <p className="mt-3 text-red-500">{deleteError}</p>}
+        </Modal>
+      )}
+    </>
   )
 }
 
@@ -267,8 +279,8 @@ function HistoryRow({ item }: { item: GameHistoryItem }) {
           )}
         </p>
         <p className="text-xs text-muted truncate">
-          {formatDate(item.playedAt)} · {item.mode === GameMode.Anime ? "Animé" : "Classique"} · {item.roundCount}{" "}
-          titre{item.roundCount > 1 ? "s" : ""}
+          {formatDate(item.playedAt)} · {item.mode === GameMode.Anime ? "Animé" : "Classique"} · {item.roundCount} titre
+          {item.roundCount > 1 ? "s" : ""}
         </p>
       </div>
     </li>
