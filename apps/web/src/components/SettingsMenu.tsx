@@ -3,6 +3,7 @@ import { Check, GearSix } from "@phosphor-icons/react"
 import { PALETTES, getPalette, setPalette, type Palette } from "@/utils/palette"
 import ThemeToggle from "@/components/ThemeToggle"
 import AccountMenuSection from "@/components/AccountMenuSection"
+import FeedbackMenuButton from "@/components/FeedbackMenuButton"
 import { setHideReactions, useHideReactions } from "@/utils/reactions"
 
 /** Gear button opening the site settings: colour theme, dark mode, other players' reactions. */
@@ -89,6 +90,7 @@ export default function SettingsMenu() {
             />
           </label>
           <AccountMenuSection onNavigate={() => setOpen(false)} />
+          <FeedbackMenuButton onNavigate={() => setOpen(false)} />
         </div>
       )}
     </div>

@@ -3,6 +3,9 @@ import type {
   BoosterStateResponse,
   CardRarity,
   CollectionResponse,
+  FeedbackBody,
+  FeedbackResponse,
+  FeedbackStatusResponse,
   OpenPackResponse,
   PackRarity,
   FriendRequestOutcome,
@@ -25,6 +28,7 @@ export enum AccountQueryKey {
   Boosters = "account:boosters",
   /** Followed by the owner ("me" or a user id), the rarity filter and the page. */
   Collection = "account:collection",
+  FeedbackStatus = "account:feedback-status",
 }
 
 /** Full-page redirect: the server sends the browser to Discord and back. */
@@ -66,6 +70,10 @@ export const accountApi = {
   /** A cover failed to load from the Deezer CDN: the next catalogue run refreshes it. */
   reportCover: (entryId: string) =>
     req<void>(`/cards/${encodeURIComponent(entryId)}/cover-missing`, { method: "POST", body: "{}" }),
+
+  feedbackStatus: () => req<FeedbackStatusResponse>("/feedback/status"),
+
+  sendFeedback: (body: FeedbackBody) => req<FeedbackResponse>("/feedback", { method: "POST", body: JSON.stringify(body) }),
 
   friends: () => req<FriendsResponse>("/friends"),
 
