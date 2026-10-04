@@ -239,6 +239,22 @@ describe("client It's a Plan", () => {
     await expect(createFeedbackIssue(input, CONFIG, fakeFetch(new Response("boom", { status: 500 })).fn)).rejects.toThrow("500")
     await expect(createFeedbackIssue(input, CONFIG, fakeFetch(Response.json({ id: 9 })).fn)).rejects.toThrow()
   })
+
+  test("l'erreur dit quoi diagnostiquer (statut, extrait du corps) sans jamais citer la clé", async () => {
+    const notFound = new Response("<html>\n  <body>404 This page could not be found</body></html>", { status: 404 })
+    await expect(createFeedbackIssue(input, CONFIG, fakeFetch(notFound).fn)).rejects.toThrow("404 : <html> <body>404 This page could not be found")
+    const echoing = new Response(JSON.stringify({ error: `clé ${API_KEY} refusée` }), { status: 401 })
+    const error = await createFeedbackIssue(input, CONFIG, fakeFetch(echoing).fn).catch((e: Error) => e)
+    expect(String(error)).toContain("[clé masquée]")
+    expect(String(error)).not.toContain(API_KEY)
+    await expect(createFeedbackIssue(input, CONFIG, fakeFetch(new Response(null, { status: 502 })).fn)).rejects.toThrow("corps vide")
+  })
+
+  test("ne suit pas les redirections", async () => {
+    const { fn, calls } = fakeFetch(Response.json({ identifier: "BLIND-1" }))
+    await createFeedbackIssue(input, CONFIG, fn)
+    expect(calls[0]!.init.redirect).toBe("manual")
+  })
 })
 
 describe("configuration", () => {
