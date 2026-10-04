@@ -5,8 +5,8 @@ export interface FeedbackConfig {
   typeBug: number
   typeIdee: number
   typeAutre: number
-  /** Colonne de départ des issues; l'API peut l'exiger. */
-  columnId: number | null
+  /** Colonne de départ des issues (obligatoire côté It's a Plan). */
+  columnId: number
   /** Label ajouté à chaque retour pour le distinguer des tickets de dev. */
   labelFeedbackId: number | null
 }
@@ -39,7 +39,7 @@ export function loadFeedbackConfig(env: Env): FeedbackConfig | null {
   const columnId = integer(env, "ITSAPLAN_COLUMN_ID")
   const labelFeedbackId = integer(env, "ITSAPLAN_LABEL_FEEDBACK")
 
-  const required = { ITSAPLAN_URL: baseUrl, ITSAPLAN_API_KEY: apiKey, ITSAPLAN_PROJECT_KEY: projectKey, ITSAPLAN_TYPE_BUG: typeBug, ITSAPLAN_TYPE_IDEE: typeIdee, ITSAPLAN_TYPE_AUTRE: typeAutre }
+  const required = { ITSAPLAN_URL: baseUrl, ITSAPLAN_API_KEY: apiKey, ITSAPLAN_PROJECT_KEY: projectKey, ITSAPLAN_TYPE_BUG: typeBug, ITSAPLAN_TYPE_IDEE: typeIdee, ITSAPLAN_TYPE_AUTRE: typeAutre, ITSAPLAN_COLUMN_ID: columnId }
   const missing = Object.entries(required).filter(([, value]) => value === null).map(([name]) => name)
   const invalid = Object.entries({ ITSAPLAN_TYPE_BUG: typeBug, ITSAPLAN_TYPE_IDEE: typeIdee, ITSAPLAN_TYPE_AUTRE: typeAutre, ITSAPLAN_COLUMN_ID: columnId, ITSAPLAN_LABEL_FEEDBACK: labelFeedbackId })
     .filter(([, value]) => Number.isNaN(value))
@@ -51,7 +51,7 @@ export function loadFeedbackConfig(env: Env): FeedbackConfig | null {
     console.warn(`Retours joueurs désactivés, variables ${problems.filter(Boolean).join(" ; ")}`)
   }
   if (baseUrl === null || apiKey === null || projectKey === null) return null
-  if (typeBug === null || typeIdee === null || typeAutre === null) return null
+  if (typeBug === null || typeIdee === null || typeAutre === null || columnId === null) return null
   if (invalid.length > 0) return null
 
   return {

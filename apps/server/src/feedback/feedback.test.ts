@@ -223,26 +223,21 @@ describe("client It's a Plan", () => {
     return { fn, calls }
   }
 
-  test("envoie la clé en Bearer seulement dans l'en-tête, le corps ne la contient pas", async () => {
-    const { fn, calls } = fakeFetch(Response.json({ issue: { sequenceNumber: 42 } }, { status: 201 }))
+  test("envoie la clé dans x-api-key seulement, le corps ne la contient pas", async () => {
+    const { fn, calls } = fakeFetch(Response.json({ id: 9, identifier: "BLIND-42" }, { status: 201 }))
     expect(await createFeedbackIssue(input, CONFIG, fn)).toBe("BLIND-42")
     const call = calls[0]!
-    expect(call.url).toContain("https://tracker.example/")
-    expect(call.url).toContain("/projects/BLIND/issues")
-    expect((call.init.headers as Record<string, string>).Authorization).toBe(`Bearer ${API_KEY}`)
+    expect(call.url).toBe("https://tracker.example/projects/BLIND/issues")
+    const headers = call.init.headers as Record<string, string>
+    expect(headers["x-api-key"]).toBe(API_KEY)
+    expect(headers.Authorization).toBeUndefined()
     expect(String(call.init.body)).not.toContain(API_KEY)
     expect(JSON.parse(String(call.init.body))).toEqual({ ...input, columnId: 21 })
   })
 
-  test("omet columnId quand il n'est pas configuré", async () => {
-    const { fn, calls } = fakeFetch(Response.json({ sequenceNumber: 3 }))
-    await createFeedbackIssue(input, { ...CONFIG, columnId: null }, fn)
-    expect(JSON.parse(String(calls[0]!.init.body))).not.toHaveProperty("columnId")
-  })
-
   test("lève sur une réponse en erreur ou sans numéro d'issue", async () => {
     await expect(createFeedbackIssue(input, CONFIG, fakeFetch(new Response("boom", { status: 500 })).fn)).rejects.toThrow("500")
-    await expect(createFeedbackIssue(input, CONFIG, fakeFetch(Response.json({ ok: true })).fn)).rejects.toThrow()
+    await expect(createFeedbackIssue(input, CONFIG, fakeFetch(Response.json({ id: 9 })).fn)).rejects.toThrow()
   })
 })
 
@@ -254,11 +249,12 @@ describe("configuration", () => {
     ITSAPLAN_TYPE_BUG: "21",
     ITSAPLAN_TYPE_IDEE: "20",
     ITSAPLAN_TYPE_AUTRE: "22",
+    ITSAPLAN_COLUMN_ID: "21",
   }
 
-  test("complète : parse les entiers, retire le slash final, options à null", () => {
-    expect(loadFeedbackConfig(FULL)).toEqual({ ...CONFIG, baseUrl: "https://tracker.example", columnId: null })
-    expect(loadFeedbackConfig({ ...FULL, ITSAPLAN_COLUMN_ID: "21", ITSAPLAN_LABEL_FEEDBACK: "9" })).toMatchObject({ columnId: 21, labelFeedbackId: 9 })
+  test("complète : parse les entiers, retire le slash final, label optionnel", () => {
+    expect(loadFeedbackConfig(FULL)).toEqual({ ...CONFIG, baseUrl: "https://tracker.example" })
+    expect(loadFeedbackConfig({ ...FULL, ITSAPLAN_LABEL_FEEDBACK: "9" })).toMatchObject({ labelFeedbackId: 9 })
   })
 
   test("variable obligatoire manquante ou identifiant invalide : désactivé", () => {
@@ -269,6 +265,7 @@ describe("configuration", () => {
       expect(loadFeedbackConfig({ ...FULL, ITSAPLAN_API_KEY: " " })).toBeNull()
       expect(loadFeedbackConfig({ ...FULL, ITSAPLAN_TYPE_BUG: "abc" })).toBeNull()
       expect(loadFeedbackConfig({ ...FULL, ITSAPLAN_COLUMN_ID: "x" })).toBeNull()
+      expect(loadFeedbackConfig({ ...FULL, ITSAPLAN_COLUMN_ID: "" })).toBeNull()
     } finally {
       console.warn = warn
     }
