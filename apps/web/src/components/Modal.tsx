@@ -10,7 +10,9 @@ interface ModalProps {
   size?: "sm" | "md"
 }
 
-/** Centred dialog over a dimmed page; closes on Escape or a click outside. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/** Centred dialog over a dimmed page; closes on Escape or a click outside, Tab stays inside. */
 export default function Modal({ title, onClose, children, actions, size = "sm" }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   // Callers pass inline handlers: keep the latest one without re-running the effect (and refocusing)
@@ -18,12 +20,38 @@ export default function Modal({ title, onClose, children, actions, size = "sm" }
   onCloseRef.current = onClose
 
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onCloseRef.current()
+      if (event.key === "Escape") {
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== "Tab") return
+      const panel = panelRef.current
+      if (!panel) return
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!first || !last) {
+        event.preventDefault()
+        return
+      }
+      const active = document.activeElement
+      if (!panel.contains(active) || (event.shiftKey && (active === first || active === panel))) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener("keydown", onKey)
     panelRef.current?.focus()
-    return () => document.removeEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      // Rend le focus au bouton qui a ouvert la modale, s'il existe encore
+      if (opener?.isConnected) opener.focus()
+    }
   }, [])
 
   return (

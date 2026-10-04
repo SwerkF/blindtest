@@ -8,6 +8,7 @@ import { AccountQueryKey } from "@/utils/accountApi"
 import { linkAccount } from "@/utils/accountSync"
 import { showToast } from "@/utils/toast"
 import Toaster from "@/components/Toaster"
+import FeedbackDialog from "@/components/FeedbackDialog"
 import type { HomeNavState } from "@/pages/Home"
 import ProfileDrawer from "@/components/ProfileDrawer"
 import { ProfileTab, openProfile } from "@/utils/profileDrawer"
@@ -127,6 +128,7 @@ export default function AccountRoot() {
     <>
       <Outlet />
       <ProfileDrawer />
+      <FeedbackDialog />
       <Toaster />
     </>
   )
